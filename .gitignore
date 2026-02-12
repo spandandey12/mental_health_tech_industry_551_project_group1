@@ -1,0 +1,81 @@
+# -----------------------
+# Python
+# -----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+conda-env/
+*.conda
+
+# -----------------------
+# Jupyter / IPython
+# -----------------------
+.ipynb_checkpoints/
+.profile_default/
+.ipython/
+
+# -----------------------
+# Dash / Web / Caches
+# -----------------------
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+coverage.*
+htmlcov/
+*.log
+
+# -----------------------
+# Data / outputs (customize)
+# -----------------------
+data/interim/
+data/processed/*.parquet
+data/processed/*.pkl
+data/processed/*.pickle
+data/processed/*.feather
+outputs/
+figures/
+plots/
+
+# If you do NOT want to commit cleaned.csv, uncomment:
+# data/processed/cleaned.csv
+
+# -----------------------
+# OS files
+# -----------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# -----------------------
+# VSCode / IDE
+# -----------------------
+.vscode/
+.idea/
+*.iml
+
+# -----------------------
+# Build / dist
+# -----------------------
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# -----------------------
+# Secrets / env files
+# -----------------------
+.env
+.env.*
+*.key
+*.pem
