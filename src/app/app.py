@@ -163,5 +163,3 @@ def make_app() -> Dash:
 if __name__ == "__main__":
     app = make_app()
     app.run(debug=True)
-
-
