@@ -4,7 +4,7 @@ dash-bootstrap-components>=1.5
 gunicorn>=21.2
 
 # Data
-pandas>=2.0
+pandas==1.5.3
 numpy>=1.24
 pyarrow>=14.0
 
