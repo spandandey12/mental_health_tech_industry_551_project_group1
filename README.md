@@ -1,15 +1,118 @@
 # Mental Health in the Tech Industry Dashboard
 
-## App Overview
+An interactive dashboard for exploring mental health attitudes, workplace culture, and organizational support in the technology industry.
 
-This project presents an interactive dashboard designed to explore mental health attitudes, workplace culture, and organizational support within the technology industry. The dashboard is intended for Human Resources (HR) professionals, people operations teams, and organizational decision-makers who are interested in improving employee wellbeing and mental health support initiatives.
+🚧 **Deployed app:** Deployment in progress (will be added once hosting is finalized)
 
-Using survey data from the Mental Health in Tech Survey, the dashboard allows users to examine how factors such as company size, geographic region, and workplace openness toward mental health relate to employees’ willingness to discuss mental health issues and seek treatment. The application emphasizes exploratory analysis rather than prediction, enabling users to compare patterns across different subsets of the data.
+---
 
-The interface consists of multiple coordinated visualizations, including bar charts and stacked bar charts summarizing mental health benefits, perceived workplace support, and treatment-seeking behavior. Users can interact with the dashboard through dropdown menus and other controls to filter the data by variables such as company size, region, gender, and survey year. Interactions in one visualization dynamically update the others, supporting both inter-plot and intra-plot exploration.
+## Part I — Dashboard Output (For Users)
 
-Overall, the dashboard aims to support evidence-based decision making by helping organizations identify gaps in mental health support, benchmark their practices against industry trends, and generate insights that can inform workplace policy and culture improvements.
+### What is this dashboard?
 
-## Dashboard Sketch
+This dashboard provides an interactive interface for exploring survey data on mental health in the technology industry. It is designed for **exploratory analysis**, allowing users to examine how treatment-seeking behavior and workplace support relate to demographic and organizational factors.
+
+The dashboard is intended for:
+- HR professionals and people operations teams  
+- Organizational decision-makers  
+- Researchers and students interested in workplace mental health  
+
+### What can you explore?
+
+Users can interactively explore:
+- Mental health treatment rates across demographic groups
+- Relationships between work interference and treatment-seeking
+- Availability of workplace mental health support (e.g., benefits, help-seeking culture)
+- Differences across company size, region, gender, age group, and survey year
+
+### How does it work?
+
+The interface consists of:
+- Global filters (dropdowns and multi-select controls)
+- Summary KPI cards
+- Coordinated visualizations including bar charts, stacked bar charts, and a heatmap
+
+All visualizations update dynamically based on the selected filters, supporting both overview and focused subgroup exploration.
+
+### Dashboard sketch
 
 ![Dashboard sketch](img/dashboard_sketch.png)
+
+---
+
+## Part II — Code & Development (For Developers)
+
+### Repository structure
+```
+project/
+├── data/
+│ ├── raw/
+│ └── processed/
+│ └── cleaned.csv
+├── src/
+│ ├── init.py
+│ └── app.py
+├── reports/
+├── doc/
+│ └── reflection-milestone2.md
+├── requirements.txt
+├── Procfile
+└── README.md
+
+```
+
+### Running the app locally
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+2. Run the Dash app:
+```bash
+python src/app.py
+```
+3. Open a web browser and navigate to `http://127.0.0.1:8050/`
+4. Interact with the dashboard using the filters and visualizations.
+
+## Key implementation notes
+
+- The dashboard is built using **Dash** for layout, callbacks, and interactivity.
+- **Altair** is used for visualization and embedded into Dash using `html.Iframe`.
+- Charts are rendered with `inline=True` to avoid external CDN dependencies.
+- The application expects a processed dataset at: data/processed/cleaned.csv
+
+
+---
+
+## Deployment
+
+The application is configured for Linux-based hosting platforms (e.g., **Render** or **Heroku**) using the following `Procfile` entry:
+
+```text
+web: gunicorn src.app:server
+```
+
+**Note:** `gunicorn` does not run on Windows locally due to Unix-only dependencies.  
+This is expected and does not affect deployment on Render or Heroku.
+
+Deployment progress and known issues are tracked via GitHub issues.
+
+---
+
+## Project status
+
+This repository contains the **Milestone 2 prototype** of the dashboard.
+
+- Core data preparation and dashboard functionality are complete.
+- The application runs locally and supports interactive exploration.
+- Public deployment is documented and in progress.
+- Additional features and refinements will be addressed in later milestones.
+
+---
+
+## Glossary
+
+- **Dashboard**: An interactive interface for visual data exploration.
+- **Exploratory analysis**: Analysis focused on understanding patterns rather than prediction.
+- **Milestone**: A defined stage of development in the project lifecycle.
+- **Issue**: A GitHub feature for tracking tasks, enhancements, and known limitations.

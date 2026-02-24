@@ -13,7 +13,7 @@ alt.data_transformers.disable_max_rows()
 # Paths & Load
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent          # .../src/app
-PROJECT_ROOT = BASE_DIR.parent.parent               # project root
+PROJECT_ROOT = BASE_DIR.parent              # project root
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 df = pd.read_csv(DATA_PATH)
