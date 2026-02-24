@@ -1,17 +1,17 @@
 # Core app
-dash>=2.15
-dash-bootstrap-components>=1.5
-gunicorn>=21.2
+dash>=2.14,<3.0
+dash-bootstrap-components>=1.4,<2.0
+gunicorn>=20.1,<22.0
 
 # Data
-pandas==1.5.3
-numpy>=1.24
-pyarrow>=14.0
+numpy>=1.23,<2.0
+pandas>=1.5,<2.2
+pyarrow>=10.0,<14.0
 
 # Visualization
-altair>=5.0
-vega_datasets>=0.9
+altair>=4.2,<6.0
+vega_datasets>=0.9,<1.0
 
 # Utilities
-python-dotenv>=1.0.0
-tabulate>=0.9
+python-dotenv>=0.21,<2.0
+tabulate>=0.8,<1.0
