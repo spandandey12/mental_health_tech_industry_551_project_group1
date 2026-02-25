@@ -1,4 +1,3 @@
-# src/app/app.py
 from pathlib import Path
 import pandas as pd
 
@@ -12,8 +11,8 @@ alt.data_transformers.disable_max_rows()
 # -----------------------------
 # Paths & Load
 # -----------------------------
-BASE_DIR = Path(__file__).resolve().parent          # .../src/app
-PROJECT_ROOT = BASE_DIR.parent              # project root
+BASE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = BASE_DIR.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 df = pd.read_csv(DATA_PATH)
