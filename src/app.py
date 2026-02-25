@@ -72,7 +72,9 @@ def as_iframe(chart: alt.Chart, height=280):
     """
     chart = chart.properties(height=height, width="container")
     return html.Iframe(
-        srcDoc=chart.to_html(fullhtml=False, inline=True),
+        srcDoc=chart.to_html(
+            # fullhtml=False,
+            inline=True),
         style={"width": "100%", "height": f"{height+90}px", "border": "0"},
     )
 
