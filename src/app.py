@@ -1,6 +1,6 @@
 from pathlib import Path
 import pandas as pd
-
+import traceback
 import altair as alt
 from dash import Dash, html, dcc, Input, Output
 import dash_bootstrap_components as dbc
@@ -15,6 +15,8 @@ BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
+if not DATA_PATH.exists():
+    raise FileNotFoundError(f"Missing data file: {DATA_PATH}. Did you commit data/processed/cleaned.csv?")
 df = pd.read_csv(DATA_PATH)
 
 # -----------------------------
@@ -403,16 +405,29 @@ app.layout = dbc.Container(
     Input("f-company", "value"),
     Input("f-remote", "value"),
 )
-def update(year, region, gender, agebin, company, remote):
-    dff = filtered_df(df, year, region, gender, agebin, company, remote)
-    print("Filtered rows:", len(dff))
-    print("Columns:", list(dff.columns))
-    c1 = as_iframe(chart_treatment_by_group(dff, group_by="age_bin", show_as="percent"), height=300)
-    c2 = as_iframe(chart_interfere_heatmap(dff, metric="row_percent"), height=300)
-    c3 = as_iframe(chart_support_vs_treatment(dff, factor="benefits"), height=300)
-    c4 = as_iframe(chart_support_vs_treatment(dff, factor="seek_help"), height=300)
 
-    return kpi_cards(dff), c1, c2, c3, c4
+
+def update(year, region, gender, agebin, company, remote):
+    try:
+        print("DATA_PATH:", DATA_PATH)
+        print("df.shape:", df.shape)
+        print("df.columns:", list(df.columns))
+
+        dff = filtered_df(df, year, region, gender, agebin, company, remote)
+        print("filters:", year, region, gender, agebin, company, remote)
+        print("dff.shape:", dff.shape)
+
+        c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=300)
+        c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=300)
+        c3 = as_iframe(chart_support_vs_treatment(dff, "benefits"), height=300)
+        c4 = as_iframe(chart_support_vs_treatment(dff, "seek_help"), height=300)
+
+        return kpi_cards(dff), c1, c2, c3, c4
+
+    except Exception as e:
+        print("CALLBACK ERROR:", repr(e))
+        traceback.print_exc()
+        return html.Div(f"Callback error: {e}"), None, None, None, None
 
 if __name__ == "__main__":
     app.run(debug=True)
