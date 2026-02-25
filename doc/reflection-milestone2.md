@@ -6,22 +6,14 @@ For Milestone 2, we built a working prototype of an interactive dashboard to exp
 
 The current version includes:
 
-* A multi-panel Dash layout with a simple three-column structure (filters on the left, main charts in the center, and notes on the right).
-* Interactive global filters for year, region, gender, age group, company size, and remote work status.
-* KPI summary cards that show total sample size and some key treatment and support percentages.
-* A grouped bar chart that shows mental health treatment rates by demographic group (like age group) and gender.
-* A heatmap that shows the relationship between work interference frequency and treatment outcomes.
-* Stacked bar charts that compare treatment outcomes across different workplace support factors (like benefits and help-seeking culture).
-
-All the charts update automatically when the user changes the filters. The dashboard is easy to understand because it has clear titles, legends, and short explanations directly on the page.
+All plots are coordinated through shared Dash callbacks, ensuring consistent filtering across visualizations and summary metrics. The interface is self-documenting, with descriptive titles, legends, and explanatory text embedded directly in the dashboard.
 
 ## What is not yet implemented
 
-Some of the features from the original proposal are not finished yet. In particular:
-
-* More workplace support indicators and additional grouping options are not added yet.
-* Comparisons across multiple years and trend visualizations will be added in later milestones.
-* Advanced UI improvements and layout changes are also not done yet.
+Some functionality described in the original proposal has not yet been implemented. In particular:
+- Additional workplace support indicators and alternative grouping dimensions are not yet included.
+- Cross-year comparative views and trend-focused visualizations are planned for later milestones.
+- Advanced UI refinements and layout customization are not yet implemented.
 
 These features will be added in future milestones after getting feedback from the TA.
 
