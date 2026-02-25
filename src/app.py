@@ -249,15 +249,20 @@ def kpi_cards(dff: pd.DataFrame):
 
     def pct(col, val="Yes"):
         if n == 0:
-            return 0.0
+            return None
+        if col not in dff.columns:
+            return None
         return (dff[col].astype(str).eq(val).mean()) * 100
+
+    def fmt(x):
+        return "N/A" if x is None else f"{x:.1f}%"
 
     cards = dbc.Row(
         [
             dbc.Col(dbc.Card(dbc.CardBody([html.Div("N", className="text-muted"), html.H4(f"{n}")]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Treatment rate", className="text-muted"), html.H4(f"{pct('treatment'):.1f}%")]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Benefits available", className="text-muted"), html.H4(f"{pct('benefits'):.1f}%")]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Family history", className="text-muted"), html.H4(f"{pct('family_history'):.1f}%")]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Treatment rate", className="text-muted"), html.H4(fmt(pct("treatment")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Benefits available", className="text-muted"), html.H4(fmt(pct("benefits")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Family history", className="text-muted"), html.H4(fmt(pct("family_history")))]))),
         ],
         className="g-2",
     )
@@ -400,7 +405,8 @@ app.layout = dbc.Container(
 )
 def update(year, region, gender, agebin, company, remote):
     dff = filtered_df(df, year, region, gender, agebin, company, remote)
-
+    print("Filtered rows:", len(dff))
+    print("Columns:", list(dff.columns))
     c1 = as_iframe(chart_treatment_by_group(dff, group_by="age_bin", show_as="percent"), height=300)
     c2 = as_iframe(chart_interfere_heatmap(dff, metric="row_percent"), height=300)
     c3 = as_iframe(chart_support_vs_treatment(dff, factor="benefits"), height=300)
