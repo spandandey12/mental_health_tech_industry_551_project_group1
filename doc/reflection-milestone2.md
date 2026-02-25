@@ -12,13 +12,13 @@ The current implementation includes:
 - A heatmap visualizing the relationship between work interference frequency and treatment outcomes.
 - Stacked bar charts comparing treatment outcomes across workplace support factors (e.g., benefits and help-seeking culture).
 
-All plots update dynamically in response to user-selected filters. The interface is self-documenting, with descriptive titles, legends, and explanatory text embedded directly in the dashboard.
+All plots are coordinated through shared Dash callbacks, ensuring consistent filtering across visualizations and summary metrics. The interface is self-documenting, with descriptive titles, legends, and explanatory text embedded directly in the dashboard.
 
 ## What is not yet implemented
 
 Some functionality described in the original proposal has not yet been implemented. In particular:
 - Additional workplace support indicators and alternative grouping dimensions are not yet included.
-- Cross-year comparative views and trend-focused visualizations are deferred to later milestones.
+- Cross-year comparative views and trend-focused visualizations are planned for later milestones.
 - Advanced UI refinements and layout customization are not yet implemented.
 
 These features are planned for future milestones after incorporating TA feedback.
