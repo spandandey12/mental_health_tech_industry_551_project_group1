@@ -2,35 +2,37 @@
 
 ## What we have implemented
 
-For Milestone 2, we implemented a functional prototype of an interactive dashboard to explore workplace mental health survey data using Dash and Altair. The dashboard is designed to support exploratory analysis of treatment outcomes and workplace factors across different demographic and organizational groups.
+For Milestone 2, we built a working prototype of an interactive dashboard to explore workplace mental health survey data using Dash and Altair. The dashboard is made to help users explore treatment outcomes and workplace-related factors across different demographic and company groups.
 
-The current implementation includes:
-- A multi-panel Dash layout with a clear three-column structure (filters, main visualizations, and contextual notes).
-- Interactive global filters for year, region, gender, age group, company size, and remote work status.
-- KPI summary cards showing sample size and key treatment- and support-related rates.
-- A grouped bar chart showing mental health treatment rates by demographic group (e.g., age group) and gender.
-- A heatmap visualizing the relationship between work interference frequency and treatment outcomes.
-- Stacked bar charts comparing treatment outcomes across workplace support factors (e.g., benefits and help-seeking culture).
+The current version includes:
 
-All plots update dynamically in response to user-selected filters. The interface is self-documenting, with descriptive titles, legends, and explanatory text embedded directly in the dashboard.
+* A multi-panel Dash layout with a simple three-column structure (filters on the left, main charts in the center, and notes on the right).
+* Interactive global filters for year, region, gender, age group, company size, and remote work status.
+* KPI summary cards that show total sample size and some key treatment and support percentages.
+* A grouped bar chart that shows mental health treatment rates by demographic group (like age group) and gender.
+* A heatmap that shows the relationship between work interference frequency and treatment outcomes.
+* Stacked bar charts that compare treatment outcomes across different workplace support factors (like benefits and help-seeking culture).
+
+All the charts update automatically when the user changes the filters. The dashboard is easy to understand because it has clear titles, legends, and short explanations directly on the page.
 
 ## What is not yet implemented
 
-Some functionality described in the original proposal has not yet been implemented. In particular:
-- Additional workplace support indicators and alternative grouping dimensions are not yet included.
-- Cross-year comparative views and trend-focused visualizations are deferred to later milestones.
-- Advanced UI refinements and layout customization are not yet implemented.
+Some of the features from the original proposal are not finished yet. In particular:
 
-These features are planned for future milestones after incorporating TA feedback.
+* More workplace support indicators and additional grouping options are not added yet.
+* Comparisons across multiple years and trend visualizations will be added in later milestones.
+* Advanced UI improvements and layout changes are also not done yet.
+
+These features will be added in future milestones after getting feedback from the TA.
 
 ## Known limitations and issues
 
-Deployment to a public hosting platform is currently in progress. While the application runs locally and is fully functional, final deployment is pending due to repository permission constraints. This limitation is documented and will be resolved in a future milestone.
+Deployment to a public hosting platform is still in progress. The app works properly on a local machine, but the final deployment is delayed because of repository permission issues. This will be fixed in a future milestone.
 
-Additionally, the current code produces minor pandas `FutureWarning` messages related to deprecated API usage. These warnings do not affect functionality and will be addressed as part of technical cleanup in later milestones.
+Also, the code currently shows some small pandas `FutureWarning` messages because of outdated functions. These warnings do not affect how the dashboard works and will be cleaned up later.
 
 ## Strengths, limitations, and future improvements
 
-A key strength of the current dashboard is its clear structure and coordinated interactivity, which allows users to explore relationships between mental health treatment and workplace conditions across multiple dimensions. The combination of summary KPIs and multiple complementary visualizations supports both high-level and detailed exploration.
+One of the main strengths of the dashboard is its clear layout and interactive features, which make it easy to explore the connection between mental health treatment and workplace conditions across different categories. The KPI cards along with multiple charts help users understand both the overall picture and the details.
 
-Current limitations include a restricted set of visualizations and limited customization options for end users. In future milestones, we plan to expand the range of analyses, refine visual encodings based on feedback, improve deployment robustness, and enhance overall usability and performance.
+Right now, the dashboard has a limited number of charts and not many customization options for users. In the next milestones, we plan to add more analysis options, improve the visual design based on feedback, make deployment more stable, and improve the overall user experience and performance.
