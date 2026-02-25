@@ -8,6 +8,7 @@ __pycache__/
 
 # Virtual environments
 .venv/
+.idea/
 venv/
 env/
 ENV/
@@ -37,11 +38,7 @@ htmlcov/
 # -----------------------
 # Data / outputs (customize)
 # -----------------------
-data/interim/
-data/processed/*.parquet
-data/processed/*.pkl
-data/processed/*.pickle
-data/processed/*.feather
+
 outputs/
 figures/
 plots/
