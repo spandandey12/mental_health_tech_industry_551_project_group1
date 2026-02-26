@@ -69,15 +69,14 @@ def _no_data_chart(msg="No data for current filters."):
     )
 
 def as_iframe(chart: alt.Chart, height=280):
-    """
-    Critical fix: inline=True so Vega scripts are embedded (no CDN dependency).
-    """
     chart = chart.properties(height=height, width="container")
     return html.Iframe(
-        srcDoc=chart.to_html(
-            # fullhtml=False,
-            inline=True),
-        style={"width": "100%", "height": f"{height+90}px", "border": "0"},
+        srcDoc=chart.to_html(inline=True),
+        style={
+            "width": "100%",
+            "height": f"{height}px",  # ✅ 不再 +90
+            "border": "0",
+        },
     )
 
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
@@ -354,44 +353,78 @@ legend = dbc.Card(
 
 app.layout = dbc.Container(
     fluid=True,
+    style={
+        "height": "calc(100vh - 10px)",
+        "overflow": "hidden",
+        "paddingBottom": "10px",
+    },
     children=[
-        html.H2("Workplace Mental Health Dashboard (2014 Survey)"),
-        html.P("Explore treatment rates and workplace factors across groups.", className="text-muted"),
+
+        html.Div(
+            [
+                html.H2("Workplace Mental Health Dashboard (2014 Survey)", style={"marginBottom": "4px"}),
+                html.P("Explore treatment rates and workplace factors across groups.",
+                       className="text-muted", style={"marginBottom": "8px"}),
+            ],
+            style={"flex": "0 0 auto"},
+        ),
+
 
         dbc.Row(
-            [
-                dbc.Col(filters, width=3),
+            style={"height": "calc(100vh - 10px - 70px)"},
+            className="g-3",
+            children=[
 
                 dbc.Col(
-                    [
-                        html.Div(id="kpi-area"),
-                        html.Br(),
-                        dbc.Row(
-                            [
-                                dbc.Col(html.Div(id="chart-1"), width=6),
-                                dbc.Col(html.Div(id="chart-2"), width=6),
-                            ],
-                            className="g-2",
-                        ),
-                        html.Br(),
-                        dbc.Row(
-                            [
-                                dbc.Col(html.Div(id="chart-3"), width=6),
-                                dbc.Col(html.Div(id="chart-4"), width=6),
-                            ],
-                            className="g-2",
-                        ),
-                    ],
-                    width=6,
+                    html.Div(filters, style={"height": "100%", "overflowY": "auto"}),
+                    width=3,
+                    style={"height": "100%"},
                 ),
 
-                dbc.Col(legend, width=3),
+
+                dbc.Col(
+                    html.Div(
+                        [
+                            html.Div(id="kpi-area", style={"flex": "0 0 auto"}),
+                            html.Div(
+                                [
+                                    html.Div(id="chart-1", style={"minHeight": "0"}),
+                                    html.Div(id="chart-2", style={"minHeight": "0"}),
+                                    html.Div(id="chart-3", style={"minHeight": "0"}),
+                                    html.Div(id="chart-4", style={"minHeight": "0"}),
+                                ],
+                                style={
+                                    "flex": "1 1 auto",
+                                    "minHeight": "0",
+                                    "overflowY": "auto",
+                                    "display": "grid",
+                                    "gridTemplateColumns": "1fr 1fr",
+                                    "gap": "10px",
+                                    "paddingRight": "6px",
+                                },
+                            ),
+                        ],
+                        style={
+                            "height": "100%",
+                            "display": "flex",
+                            "flexDirection": "column",
+                            "minHeight": "0",
+                        },
+                    ),
+                    width=6,
+                    style={"height": "100%"},
+                ),
+
+
+                dbc.Col(
+                    html.Div(legend, style={"height": "100%", "overflowY": "auto"}),
+                    width=3,
+                    style={"height": "100%"},
+                ),
             ],
-            className="g-3",
         ),
     ],
 )
-
 @app.callback(
     Output("kpi-area", "children"),
     Output("chart-1", "children"),
