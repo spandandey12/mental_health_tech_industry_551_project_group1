@@ -68,15 +68,12 @@ def _no_data_chart(msg="No data for current filters."):
         .properties(width="container", height=260)
     )
 
-def as_iframe(chart: alt.Chart, height=280):
-    chart = chart.properties(height=height, width="container")
+def as_iframe(chart: alt.Chart, height=260):
+    view_h = max(120, height - 130)
+    chart = chart.properties(height=view_h, width="container")
     return html.Iframe(
-        srcDoc=chart.to_html(inline=True),
-        style={
-            "width": "100%",
-            "height": f"{height}px",  # ✅ 不再 +90
-            "border": "0",
-        },
+        srcDoc=chart.to_html(inline=True, embed_options={"actions": False}),
+        style={"width": "100%", "height": f"{height}px", "border": "0"},
     )
 
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
@@ -449,11 +446,11 @@ def update(year, region, gender, agebin, company, remote):
         dff = filtered_df(df, year, region, gender, agebin, company, remote)
         print("filters:", year, region, gender, agebin, company, remote)
         print("dff.shape:", dff.shape)
-
-        c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=300)
-        c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=300)
-        c3 = as_iframe(chart_support_vs_treatment(dff, "benefits"), height=300)
-        c4 = as_iframe(chart_support_vs_treatment(dff, "seek_help"), height=300)
+        h=300
+        c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
+        c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
+        c3 = as_iframe(chart_support_vs_treatment(dff, "benefits"), height=h)
+        c4 = as_iframe(chart_support_vs_treatment(dff, "seek_help"), height=h)
 
         return kpi_cards(dff), c1, c2, c3, c4
 
