@@ -431,7 +431,11 @@ def kpi_cards(dff: pd.DataFrame):
 # -----------------------------
 # App
 # -----------------------------
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    title="Workplace Mental Health Dashboard"
+)
 server = app.server
 
 years = sorted(df["year"].dropna().unique())
