@@ -23,9 +23,35 @@ df = pd.read_csv(DATA_PATH)
 # Helpers
 # -----------------------------
 def _ensure_str_series(s: pd.Series) -> pd.Series:
+    """
+    Convert a pandas Series to string type and replace missing values.
+
+    Parameters
+    ----------
+    s : pd.Series
+        Input series that may contain missing values.
+
+    Returns
+    -------
+    pd.Series
+        String-formatted series with missing values replaced by '<missing>'.
+    """
     return s.astype("string").fillna("<missing>")
 
 def _order_yes_no_unknown(values):
+    """
+       Return a consistent display order for yes/no-style categorical values.
+
+       Parameters
+       ----------
+       values : iterable
+           Collection of category values.
+
+       Returns
+       -------
+       list
+           Ordered list of category labels for plotting.
+       """
     priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
     ordered = [v for v in priority if v in vals]
@@ -33,6 +59,19 @@ def _order_yes_no_unknown(values):
     return ordered + tail
 
 def _order_work_interfere(values):
+    """
+    Return a consistent display order for the work_interfere variable.
+
+    Parameters
+    ----------
+    values : iterable
+        Collection of work interference category values.
+
+    Returns
+    -------
+    list
+        Ordered list of work interference labels for plotting.
+    """
     priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
     ordered = [v for v in priority if v in vals]
@@ -40,6 +79,19 @@ def _order_work_interfere(values):
     return ordered + tail
 
 def _order_age_bin(values):
+    """
+    Sort age-bin labels by the lower bound of each age range.
+
+    Parameters
+    ----------
+    values : iterable
+        Collection of age-bin labels such as '20-29' or '50+'.
+
+    Returns
+    -------
+    list
+        Ordered list of age-bin labels.
+    """
     vals = [v for v in values if pd.notna(v)]
     def key(v):
         try:
@@ -49,6 +101,19 @@ def _order_age_bin(values):
     return sorted(pd.unique(vals), key=key)
 
 def _order_company_size(values):
+    """
+    Sort company-size labels by the lower bound of each size range.
+
+    Parameters
+    ----------
+    values : iterable
+        Collection of company size labels such as '1-5' or '1000+'.
+
+    Returns
+    -------
+    list
+        Ordered list of company-size labels.
+    """
     vals = [v for v in values if pd.notna(v)]
     def key(v):
         s = str(v).strip()
@@ -61,6 +126,19 @@ def _order_company_size(values):
     return sorted(pd.unique(vals), key=key)
 
 def _no_data_chart(msg="No data for current filters."):
+    """
+    Create a fallback Altair text chart when no data is available.
+
+    Parameters
+    ----------
+    msg : str, default="No data for current filters."
+        Message displayed in the placeholder chart.
+
+    Returns
+    -------
+    alt.Chart
+        Altair chart containing a text message.
+    """
     return (
         alt.Chart(pd.DataFrame({"msg": [msg]}))
         .mark_text(size=14)
@@ -69,6 +147,22 @@ def _no_data_chart(msg="No data for current filters."):
     )
 
 def as_iframe(chart: alt.Chart, height=260):
+    def as_iframe(chart: alt.Chart, height=260):
+        """
+        Render an Altair chart inside a Dash HTML iframe.
+
+        Parameters
+        ----------
+        chart : alt.Chart
+            Altair chart object to render.
+        height : int, default=260
+            Height of the iframe in pixels.
+
+        Returns
+        -------
+        html.Iframe
+            Dash iframe component containing the chart HTML.
+        """
     view_h = max(120, height - 130)
     chart = chart.properties(height=view_h, width="container")
     return html.Iframe(
@@ -77,6 +171,31 @@ def as_iframe(chart: alt.Chart, height=260):
     )
 
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
+    """
+    Filter the dataset using the selected dashboard controls.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Input dataframe to filter.
+    year : int or None
+        Selected survey year.
+    region : list or None
+        Selected region values.
+    genders : list or None
+        Selected gender values.
+    age_bins : list or None
+        Selected age-bin values.
+    company_sizes : list or None
+        Selected company-size values.
+    remote_work : list or None
+        Selected remote work values.
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered dataframe used for KPI cards and charts.
+    """
     if year:
         dff = dff[dff["year"] == int(year)]
     if region:
@@ -96,6 +215,23 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
 # -----------------------------
 
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
+    """
+    Create Chart 1: a grouped bar chart of treatment by demographic group.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered dataframe used for plotting.
+    group_by : str, default="age_bin"
+        Column used to group respondents, such as age_bin or company_size.
+    show_as : str, default="percent"
+        Display metric. Use 'percent' for treatment rate or 'count' for counts.
+
+    Returns
+    -------
+    alt.Chart
+        Altair grouped bar chart.
+    """
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 1 (Treatment by group).")
 
@@ -207,6 +343,22 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
 #
 #     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
+    """
+    Create Chart 2: a bar chart of work interference among respondents
+    who sought treatment.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered dataframe used for plotting.
+    metric : str, default="count"
+        Metric shown on the y-axis. Use 'count' or 'percent'.
+
+    Returns
+    -------
+    alt.Chart
+        Altair bar chart showing the distribution of work_interfere values.
+    """
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 2 (Work interference).")
 
@@ -359,7 +511,23 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
 #
 #     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
-def chart_support_yes_only(dff: pd.DataFrame, factor="benefits"):
+def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C78A8"):
+    """
+    Create Charts 3 and 4: distributions of workplace support variables
+    among respondents who sought treatment.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered dataframe used for plotting.
+    factor : str, default="benefits"
+        Support-related variable to visualize, such as benefits or seek_help.
+
+    Returns
+    -------
+    alt.Chart
+        Altair bar chart showing the percentage distribution for the factor.
+    """
     if dff is None or len(dff) == 0:
         return _no_data_chart(f"No data for Chart ({factor}).")
 
@@ -389,7 +557,7 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits"):
 
     chart = (
         alt.Chart(counts)
-        .mark_bar()
+        .mark_bar(color=bar_color)
         .encode(
             x=alt.X(f"{factor}:N", sort=x_order, title=nice_title),
             y=alt.Y("pct:Q", title="Percent of treatment = Yes respondents"),
@@ -405,6 +573,19 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits"):
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
 def kpi_cards(dff: pd.DataFrame):
+    """
+    Create KPI summary cards for the filtered dataset.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered dataframe used to compute summary statistics.
+
+    Returns
+    -------
+    dbc.Row
+        Bootstrap row containing four KPI cards.
+    """
     n = len(dff)
 
     def pct(col, val="Yes"):
@@ -444,16 +625,20 @@ genders = sorted(df["gender"].dropna().unique())
 age_bins = _order_age_bin(df["age_bin"].dropna().unique())
 company_sizes = _order_company_size(df["company_size"].dropna().unique())
 remote_vals = sorted(df["remote_work"].dropna().unique())
-
 filters = dbc.Card(
     dbc.CardBody(
         [
-            html.H5("Filters"),
-            html.Label("Year"),
-            dcc.Dropdown(years, years[0] if years else None, id="f-year", clearable=False),
+            html.H5("Filters", className="mb-4"),
 
-            html.Br(),
-            html.Label("Region"),
+            html.Label("Year", className="mb-2 fw-semibold"),
+            dcc.Dropdown(
+                years,
+                years[0] if years else None,
+                id="f-year",
+                clearable=False
+            ),
+
+            html.Label("Region", className="mt-4 mb-2 fw-semibold"),
             dcc.Dropdown(
                 regions,
                 ["North America"] if "North America" in regions else regions[:1],
@@ -461,25 +646,79 @@ filters = dbc.Card(
                 multi=True
             ),
 
-            html.Hr(),
-            html.Label("Gender"),
-            dcc.Dropdown(genders, genders, id="f-gender", multi=True),
+            html.Hr(className="my-4"),
 
-            html.Br(),
-            html.Label("Age bin"),
-            dcc.Dropdown(age_bins, age_bins, id="f-agebin", multi=True),
+            html.Label("Gender", className="mb-2 fw-semibold"),
+            dcc.Dropdown(
+                genders,
+                genders,
+                id="f-gender",
+                multi=True
+            ),
 
-            html.Br(),
-            html.Label("Company size"),
-            dcc.Dropdown(company_sizes, id="f-company", multi=True),
+            html.Label("Age bin", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                age_bins,
+                age_bins,
+                id="f-agebin",
+                multi=True
+            ),
 
-            html.Br(),
-            html.Label("Remote work"),
-            dcc.Dropdown(remote_vals, id="f-remote", multi=True),
-        ]
+            html.Label("Company size", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                company_sizes,
+                id="f-company",
+                multi=True
+            ),
+
+            html.Label("Remote work", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                remote_vals,
+                id="f-remote",
+                multi=True
+            ),
+        ],
+        style={
+            "padding": "24px",
+        },
     ),
-    className="h-100",
+    className="h-100 shadow-sm",
 )
+# filters = dbc.Card(
+#     dbc.CardBody(
+#         [
+#             html.H5("Filters"),
+#             html.Label("Year"),
+#             dcc.Dropdown(years, years[0] if years else None, id="f-year", clearable=False),
+#
+#             html.Br(),
+#             html.Label("Region"),
+#             dcc.Dropdown(
+#                 regions,
+#                 ["North America"] if "North America" in regions else regions[:1],
+#                 id="f-region",
+#                 multi=True
+#             ),
+#
+#             html.Hr(),
+#             html.Label("Gender"),
+#             dcc.Dropdown(genders, genders, id="f-gender", multi=True),
+#
+#             html.Br(),
+#             html.Label("Age bin"),
+#             dcc.Dropdown(age_bins, age_bins, id="f-agebin", multi=True),
+#
+#             html.Br(),
+#             html.Label("Company size"),
+#             dcc.Dropdown(company_sizes, id="f-company", multi=True),
+#
+#             html.Br(),
+#             html.Label("Remote work"),
+#             dcc.Dropdown(remote_vals, id="f-remote", multi=True),
+#         ]
+#     ),
+#     className="h-100",
+# )
 
 legend = dbc.Card(
     dbc.CardBody(
@@ -604,6 +843,29 @@ app.layout = dbc.Container(
 
 
 def update(year, region, gender, agebin, company, remote):
+    """
+    Update the KPI cards and all charts whenever a dashboard filter changes.
+
+    Parameters
+    ----------
+    year : int or None
+        Selected survey year.
+    region : list or None
+        Selected region values.
+    gender : list or None
+        Selected gender values.
+    agebin : list or None
+        Selected age-bin values.
+    company : list or None
+        Selected company-size values.
+    remote : list or None
+        Selected remote work values.
+
+    Returns
+    -------
+    tuple
+        Updated KPI cards and four chart components.
+    """
     try:
         print("DATA_PATH:", DATA_PATH)
         print("df.shape:", df.shape)
@@ -615,8 +877,8 @@ def update(year, region, gender, agebin, company, remote):
         h=300
         c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
         c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
-        c3 = as_iframe(chart_support_yes_only(dff, "benefits"), height=h)
-        c4 = as_iframe(chart_support_yes_only(dff, "seek_help"), height=h)
+        c3 = as_iframe(chart_support_yes_only(dff, "benefits","#59A14F"), height=h)
+        c4 = as_iframe(chart_support_yes_only(dff, "seek_help", "#F4A261"), height=h)
 
         return kpi_cards(dff), c1, c2, c3, c4
 
