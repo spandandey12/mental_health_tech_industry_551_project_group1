@@ -411,7 +411,7 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
             y=alt.Y(y_field, title=y_title),
             tooltip=tooltip,
         )
-        .properties(title="Work interference among respondents who sought treatment")
+        .properties(title="Work interference")
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
@@ -567,7 +567,7 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C7
                 alt.Tooltip("count:Q", title="Count"),
             ],
         )
-        .properties(title=f"{nice_title} among respondents who sought treatment")
+        .properties(title=f"{nice_title} Support")
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
@@ -802,7 +802,7 @@ app.layout = dbc.Container(
                                     "display": "grid",
                                     "gridTemplateColumns": "1fr 1fr",
                                     "gap": "10px",
-                                    "paddingRight": "6px",
+                                    "paddingRight": "2px",
                                 },
                             ),
                         ],
@@ -874,7 +874,7 @@ def update(year, region, gender, agebin, company, remote):
         dff = filtered_df(df, year, region, gender, agebin, company, remote)
         print("filters:", year, region, gender, agebin, company, remote)
         print("dff.shape:", dff.shape)
-        h=300
+        h=320
         c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
         c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
         c3 = as_iframe(chart_support_yes_only(dff, "benefits","#59A14F"), height=h)
