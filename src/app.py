@@ -359,7 +359,7 @@ app.layout = dbc.Container(
 
         html.Div(
             [
-                html.H2("Workplace Mental Health Dashboard (2014 Survey)", style={"marginBottom": "4px"}),
+                html.H2("Workplace Mental Health Dashboard", style={"marginBottom": "4px"}),
                 html.P("Explore treatment rates and workplace factors across groups.",
                        className="text-muted", style={"marginBottom": "8px"}),
             ],
