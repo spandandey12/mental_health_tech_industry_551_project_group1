@@ -94,6 +94,7 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
 # -----------------------------
 # Charts
 # -----------------------------
+
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 1 (Treatment by group).")
@@ -124,19 +125,28 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
     if show_as == "count":
         y_field = "treat_yes:Q"
         y_title = "Treatment (Yes) count"
-        tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
-                   alt.Tooltip("treat_yes:Q"), alt.Tooltip("n:Q")]
+        tooltip = [
+            alt.Tooltip(g + ":N"),
+            alt.Tooltip("gender:N"),
+            alt.Tooltip("treat_yes:Q"),
+            alt.Tooltip("n:Q"),
+        ]
     else:
         y_field = "rate:Q"
         y_title = "Treatment rate (%)"
-        tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
-                   alt.Tooltip("rate:Q", format=".1f"), alt.Tooltip("n:Q")]
+        tooltip = [
+            alt.Tooltip(g + ":N"),
+            alt.Tooltip("gender:N"),
+            alt.Tooltip("rate:Q", format=".1f"),
+            alt.Tooltip("n:Q"),
+        ]
 
     chart = (
         alt.Chart(agg)
         .mark_bar()
         .encode(
             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
+            xOffset=alt.XOffset("gender:N"),   # 关键：并排 grouped bar
             y=alt.Y(y_field, title=y_title),
             color=alt.Color("gender:N", title="Gender"),
             tooltip=tooltip,
@@ -145,10 +155,60 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
-
-def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
+# def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart("No data for Chart 1 (Treatment by group).")
+#
+#     g = group_by
+#     if g not in dff.columns:
+#         return _no_data_chart(f"Missing column: {g}")
+#
+#     tmp = dff.copy()
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#     tmp[g] = _ensure_str_series(tmp[g])
+#     tmp["gender"] = _ensure_str_series(tmp["gender"])
+#
+#     agg = (
+#         tmp.groupby([g, "gender"], dropna=False)
+#         .agg(n=("treatment", "size"), treat_yes=("treatment", lambda x: (x == "Yes").sum()))
+#         .reset_index()
+#     )
+#     agg["rate"] = (agg["treat_yes"] / agg["n"]) * 100
+#
+#     if g == "age_bin":
+#         order = _order_age_bin(tmp[g].unique())
+#     elif g == "company_size":
+#         order = _order_company_size(tmp[g].unique())
+#     else:
+#         order = sorted(tmp[g].unique().tolist())
+#
+#     if show_as == "count":
+#         y_field = "treat_yes:Q"
+#         y_title = "Treatment (Yes) count"
+#         tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
+#                    alt.Tooltip("treat_yes:Q"), alt.Tooltip("n:Q")]
+#     else:
+#         y_field = "rate:Q"
+#         y_title = "Treatment rate (%)"
+#         tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
+#                    alt.Tooltip("rate:Q", format=".1f"), alt.Tooltip("n:Q")]
+#
+#     chart = (
+#         alt.Chart(agg)
+#         .mark_bar()
+#         .encode(
+#             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
+#             y=alt.Y(y_field, title=y_title),
+#             color=alt.Color("gender:N", title="Gender"),
+#             tooltip=tooltip,
+#         )
+#         .properties(title="Treatment by group")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     if dff is None or len(dff) == 0:
-        return _no_data_chart("No data for Chart 2 (Work interference heatmap).")
+        return _no_data_chart("No data for Chart 2 (Work interference).")
 
     if "work_interfere" not in dff.columns or "treatment" not in dff.columns:
         return _no_data_chart("Missing required columns for Chart 2.")
@@ -157,51 +217,151 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
+    # 只保留 treatment = Yes
+    tmp = tmp[tmp["treatment"] == "Yes"]
+
+    if len(tmp) == 0:
+        return _no_data_chart("No treatment='Yes' data for Chart 2.")
+
     counts = (
-        tmp.groupby(["work_interfere", "treatment"], dropna=False)
+        tmp.groupby(["work_interfere"], dropna=False)
         .size()
         .reset_index(name="count")
     )
 
-    if metric == "count":
-        counts["value"] = counts["count"]
-        legend_title = "Count"
-        tooltip = [
-            alt.Tooltip("work_interfere:N"),
-            alt.Tooltip("treatment:N"),
-            alt.Tooltip("count:Q"),
-        ]
-    else:
-        totals = counts.groupby("work_interfere")["count"].transform("sum")
-        counts["value"] = (counts["count"] / totals) * 100
-        legend_title = "Row %"
-        tooltip = [
-            alt.Tooltip("work_interfere:N"),
-            alt.Tooltip("treatment:N"),
-            alt.Tooltip("value:Q", format=".1f"),
-            alt.Tooltip("count:Q"),
-        ]
+    total = counts["count"].sum()
+    counts["pct"] = (counts["count"] / total) * 100
 
     x_order = _order_work_interfere(tmp["work_interfere"].unique())
-    y_order = _order_yes_no_unknown(tmp["treatment"].unique())
+
+    if metric == "percent":
+        y_field = "pct:Q"
+        y_title = "Percent of treatment = Yes respondents"
+        tooltip = [
+            alt.Tooltip("work_interfere:N", title="Work interference"),
+            alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+            alt.Tooltip("count:Q", title="Count"),
+        ]
+    else:
+        y_field = "count:Q"
+        y_title = "Count of treatment = Yes respondents"
+        tooltip = [
+            alt.Tooltip("work_interfere:N", title="Work interference"),
+            alt.Tooltip("count:Q", title="Count"),
+            alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+        ]
 
     chart = (
         alt.Chart(counts)
-        .mark_rect()
+        .mark_bar()
         .encode(
             x=alt.X("work_interfere:N", sort=x_order, title="Work interference"),
-            y=alt.Y("treatment:N", sort=y_order, title="Treatment"),
-            color=alt.Color("value:Q", title=legend_title),
+            y=alt.Y(y_field, title=y_title),
             tooltip=tooltip,
         )
-        .properties(title="Work interference × Treatment")
+        .properties(title="Work interference among respondents who sought treatment")
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+# def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart("No data for Chart 2 (Work interference heatmap).")
+#
+#     if "work_interfere" not in dff.columns or "treatment" not in dff.columns:
+#         return _no_data_chart("Missing required columns for Chart 2.")
+#
+#     tmp = dff.copy()
+#     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#
+#     counts = (
+#         tmp.groupby(["work_interfere", "treatment"], dropna=False)
+#         .size()
+#         .reset_index(name="count")
+#     )
+#
+#     if metric == "count":
+#         counts["value"] = counts["count"]
+#         legend_title = "Count"
+#         tooltip = [
+#             alt.Tooltip("work_interfere:N"),
+#             alt.Tooltip("treatment:N"),
+#             alt.Tooltip("count:Q"),
+#         ]
+#     else:
+#         totals = counts.groupby("work_interfere")["count"].transform("sum")
+#         counts["value"] = (counts["count"] / totals) * 100
+#         legend_title = "Row %"
+#         tooltip = [
+#             alt.Tooltip("work_interfere:N"),
+#             alt.Tooltip("treatment:N"),
+#             alt.Tooltip("value:Q", format=".1f"),
+#             alt.Tooltip("count:Q"),
+#         ]
+#
+#     x_order = _order_work_interfere(tmp["work_interfere"].unique())
+#     y_order = _order_yes_no_unknown(tmp["treatment"].unique())
+#
+#     chart = (
+#         alt.Chart(counts)
+#         .mark_rect()
+#         .encode(
+#             x=alt.X("work_interfere:N", sort=x_order, title="Work interference"),
+#             y=alt.Y("treatment:N", sort=y_order, title="Treatment"),
+#             color=alt.Color("value:Q", title=legend_title),
+#             tooltip=tooltip,
+#         )
+#         .properties(title="Work interference × Treatment")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
-def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
+# def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart(f"No data for Chart (Support: {factor}).")
+#
+#     if factor not in dff.columns or "treatment" not in dff.columns:
+#         return _no_data_chart(f"Missing required columns for factor: {factor}")
+#
+#     tmp = dff.copy()
+#     tmp[factor] = _ensure_str_series(tmp[factor])
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#
+#     counts = (
+#         tmp.groupby([factor, "treatment"], dropna=False)
+#         .size()
+#         .reset_index(name="count")
+#     )
+#     totals = counts.groupby(factor)["count"].transform("sum")
+#     counts["pct"] = (counts["count"] / totals) * 100
+#
+#     x_order = _order_yes_no_unknown(tmp[factor].unique())
+#     y_order = _order_yes_no_unknown(tmp["treatment"].unique())
+#
+#     nice_title = factor.replace("_", " ").title()
+#
+#     chart = (
+#         alt.Chart(counts)
+#         .mark_bar()
+#         .encode(
+#             x=alt.X(f"{factor}:N", sort=x_order, title=nice_title),
+#             y=alt.Y("pct:Q", stack="normalize", title="Share within group"),
+#             color=alt.Color("treatment:N", sort=y_order, title="Treatment"),
+#             tooltip=[
+#                 alt.Tooltip(f"{factor}:N", title=nice_title),
+#                 alt.Tooltip("treatment:N", title="Treatment"),
+#                 alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+#                 alt.Tooltip("count:Q", title="Count"),
+#             ],
+#         )
+#         .properties(title=f"{nice_title} vs Treatment (100% stacked)")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+
+def chart_support_yes_only(dff: pd.DataFrame, factor="benefits"):
     if dff is None or len(dff) == 0:
-        return _no_data_chart(f"No data for Chart (Support: {factor}).")
+        return _no_data_chart(f"No data for Chart ({factor}).")
 
     if factor not in dff.columns or "treatment" not in dff.columns:
         return _no_data_chart(f"Missing required columns for factor: {factor}")
@@ -210,17 +370,21 @@ def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
     tmp[factor] = _ensure_str_series(tmp[factor])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
+    # 只保留 treatment = Yes
+    tmp = tmp[tmp["treatment"] == "Yes"]
+
+    if len(tmp) == 0:
+        return _no_data_chart(f"No treatment='Yes' data for factor: {factor}")
+
     counts = (
-        tmp.groupby([factor, "treatment"], dropna=False)
+        tmp.groupby([factor], dropna=False)
         .size()
         .reset_index(name="count")
     )
-    totals = counts.groupby(factor)["count"].transform("sum")
-    counts["pct"] = (counts["count"] / totals) * 100
+    total = counts["count"].sum()
+    counts["pct"] = (counts["count"] / total) * 100
 
     x_order = _order_yes_no_unknown(tmp[factor].unique())
-    y_order = _order_yes_no_unknown(tmp["treatment"].unique())
-
     nice_title = factor.replace("_", " ").title()
 
     chart = (
@@ -228,16 +392,14 @@ def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
         .mark_bar()
         .encode(
             x=alt.X(f"{factor}:N", sort=x_order, title=nice_title),
-            y=alt.Y("pct:Q", stack="normalize", title="Share within group"),
-            color=alt.Color("treatment:N", sort=y_order, title="Treatment"),
+            y=alt.Y("pct:Q", title="Percent of treatment = Yes respondents"),
             tooltip=[
                 alt.Tooltip(f"{factor}:N", title=nice_title),
-                alt.Tooltip("treatment:N", title="Treatment"),
                 alt.Tooltip("pct:Q", title="Percent", format=".1f"),
                 alt.Tooltip("count:Q", title="Count"),
             ],
         )
-        .properties(title=f"{nice_title} vs Treatment (100% stacked)")
+        .properties(title=f"{nice_title} among respondents who sought treatment")
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
@@ -334,8 +496,8 @@ legend = dbc.Card(
             html.Ul(
                 [
                     html.Li("Chart 1: bars show treatment rate (%) by age group; colors represent gender."),
-                    html.Li("Chart 2: heatmap shows treatment distribution by work interference (row %)."),
-                    html.Li("Chart 3/4: 100% stacked bars show treatment share within each support category."),
+                    html.Li("Chart 2: bar chart shows work interference among respondents who sought treatment."),
+                    html.Li("Chart 3/4: bar charts show workplace support distributions among respondents who sought treatment."),
                 ]
             ),
             html.P(
@@ -449,8 +611,8 @@ def update(year, region, gender, agebin, company, remote):
         h=300
         c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
         c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
-        c3 = as_iframe(chart_support_vs_treatment(dff, "benefits"), height=h)
-        c4 = as_iframe(chart_support_vs_treatment(dff, "seek_help"), height=h)
+        c3 = as_iframe(chart_support_yes_only(dff, "benefits"), height=h)
+        c4 = as_iframe(chart_support_yes_only(dff, "seek_help"), height=h)
 
         return kpi_cards(dff), c1, c2, c3, c4
 
