@@ -5,13 +5,16 @@ import altair as alt
 from dash import Dash, html, dcc, Input, Output
 import dash_bootstrap_components as dbc
 
-# Make Altair safer for larger tables
+# Disable Altair row limit so charts can handle larger datasets without errors
 alt.data_transformers.disable_max_rows()
 
 
 # Paths & Load
+# Resolve project directories so the script works regardless of where it is executed
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
+
+# Path to the cleaned dataset used by the dashboard
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 if not DATA_PATH.exists():
@@ -20,6 +23,8 @@ df = pd.read_csv(DATA_PATH)
 
 
 # Helpers
+# Convert column values to string type so categorical comparisons
+# (e.g., "Yes"/"No") work consistently and missing values are visible
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
     Convert a pandas Series to string format and handle missing values.
@@ -167,7 +172,9 @@ def as_iframe(chart: alt.Chart, height=260):
         srcDoc=chart.to_html(inline=True, embed_options={"actions": False}),
         style={"width": "100%", "height": f"{height}px", "border": "0"},
     )
-
+    
+# Apply all selected dashboard filters sequentially
+# Each filter narrows the dataset used for visualization
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
     """
     Apply dashboard filter selections to the dataset.
