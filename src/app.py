@@ -5,16 +5,12 @@ import altair as alt
 from dash import Dash, html, dcc, Input, Output
 import dash_bootstrap_components as dbc
 
-# Disable Altair row limit so charts can handle larger datasets without errors
+# Make Altair safer for larger tables
 alt.data_transformers.disable_max_rows()
 
-
 # Paths & Load
-# Resolve project directories so the script works regardless of where it is executed
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
-
-# Path to the cleaned dataset used by the dashboard
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 if not DATA_PATH.exists():
@@ -23,8 +19,6 @@ df = pd.read_csv(DATA_PATH)
 
 
 # Helpers
-# Convert column values to string type so categorical comparisons
-# (e.g., "Yes"/"No") work consistently and missing values are visible
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
     Convert a pandas Series to string format and handle missing values.
@@ -41,25 +35,27 @@ def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
     return s.astype("string").fillna("<missing>")
 
-def _order_yes_no_unknown(values):
-   """
-    Return a consistent ordering for categorical values such as yes/no responses.
-    
-    Parameters
-    ----------
-    values : iterable
-        Collection of categorical values.
 
-    Returns
-    -------
-    list
-        List of category labels arranged in a consistent order for visualization.
+def _order_yes_no_unknown(values):
     """
+     Return a consistent ordering for categorical values such as yes/no responses.
+
+     Parameters
+     ----------
+     values : iterable
+         Collection of categorical values.
+
+     Returns
+     -------
+     list
+         List of category labels arranged in a consistent order for visualization.
+     """
     priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
     ordered = [v for v in priority if v in vals]
     tail = sorted([v for v in vals if v not in ordered])
     return ordered + tail
+
 
 def _order_work_interfere(values):
     """
@@ -81,6 +77,7 @@ def _order_work_interfere(values):
     tail = sorted([v for v in vals if v not in ordered])
     return ordered + tail
 
+
 def _order_age_bin(values):
     """
     Order age-bin labels based on the lower value of each age range.
@@ -96,12 +93,15 @@ def _order_age_bin(values):
         Age-bin labels sorted according to the starting age of each range.
     """
     vals = [v for v in values if pd.notna(v)]
+
     def key(v):
         try:
             return int(str(v).split("-")[0].strip())
         except Exception:
-            return 10**9
+            return 10 ** 9
+
     return sorted(pd.unique(vals), key=key)
+
 
 def _order_company_size(values):
     """
@@ -118,6 +118,7 @@ def _order_company_size(values):
         Company-size labels sorted by the starting value of each range.
     """
     vals = [v for v in values if pd.notna(v)]
+
     def key(v):
         s = str(v).strip()
         try:
@@ -125,8 +126,10 @@ def _order_company_size(values):
                 return int(s.replace("+", ""))
             return int(s.split("-")[0])
         except Exception:
-            return 10**9
+            return 10 ** 9
+
     return sorted(pd.unique(vals), key=key)
+
 
 def _no_data_chart(msg="No data for current filters."):
     """
@@ -149,6 +152,7 @@ def _no_data_chart(msg="No data for current filters."):
         .properties(width="container", height=260)
     )
 
+
 def as_iframe(chart: alt.Chart, height=260):
     def as_iframe(chart: alt.Chart, height=260):
         """
@@ -166,15 +170,15 @@ def as_iframe(chart: alt.Chart, height=260):
     html.Iframe
         Dash iframe element displaying the chart as HTML.
     """
+
     view_h = max(120, height - 130)
     chart = chart.properties(height=view_h, width="container")
     return html.Iframe(
         srcDoc=chart.to_html(inline=True, embed_options={"actions": False}),
         style={"width": "100%", "height": f"{height}px", "border": "0"},
     )
-    
-# Apply all selected dashboard filters sequentially
-# Each filter narrows the dataset used for visualization
+
+
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
     """
     Apply dashboard filter selections to the dataset.
@@ -214,6 +218,7 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
     if remote_work:
         dff = dff[dff["remote_work"].isin(remote_work)]
     return dff
+
 
 # Charts
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
@@ -284,7 +289,7 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
         .mark_bar()
         .encode(
             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
-            xOffset=alt.XOffset("gender:N"),   #grouped bar
+            xOffset=alt.XOffset("gender:N"),  # grouped bar
             y=alt.Y(y_field, title=y_title),
             color=alt.Color("gender:N", title="Gender"),
             tooltip=tooltip,
@@ -293,6 +298,8 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+
+
 # def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
 #     if dff is None or len(dff) == 0:
 #         return _no_data_chart("No data for Chart 1 (Treatment by group).")
@@ -371,7 +378,7 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
-    #treatment = Yes
+    # treatment = Yes
     tmp = tmp[tmp["treatment"] == "Yes"]
 
     if len(tmp) == 0:
@@ -417,6 +424,8 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     )
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+
+
 # def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
 #     if dff is None or len(dff) == 0:
 #         return _no_data_chart("No data for Chart 2 (Work interference heatmap).")
@@ -514,22 +523,22 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
 #     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
 def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C78A8"):
-   """
-    Create Charts 3 and 4: bar charts showing the distribution of workplace
-    support factors among respondents who sought treatment.
-
-    Parameters
-    ----------
-    dff : pd.DataFrame
-        Filtered DataFrame used for plotting.
-    factor : str, default="benefits"
-        Workplace support variable to visualize (e.g., benefits or seek_help).
-
-    Returns
-    -------
-    alt.Chart
-        Altair bar chart displaying the percentage distribution for the selected factor.
     """
+     Create Charts 3 and 4: bar charts showing the distribution of workplace
+     support factors among respondents who sought treatment.
+
+     Parameters
+     ----------
+     dff : pd.DataFrame
+         Filtered DataFrame used for plotting.
+     factor : str, default="benefits"
+         Workplace support variable to visualize (e.g., benefits or seek_help).
+
+     Returns
+     -------
+     alt.Chart
+         Altair bar chart displaying the percentage distribution for the selected factor.
+     """
     if dff is None or len(dff) == 0:
         return _no_data_chart(f"No data for Chart ({factor}).")
 
@@ -540,7 +549,7 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C7
     tmp[factor] = _ensure_str_series(tmp[factor])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
-    #treatment = Yes
+    # treatment = Yes
     tmp = tmp[tmp["treatment"] == "Yes"]
 
     if len(tmp) == 0:
@@ -574,6 +583,7 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C7
 
     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
+
 def kpi_cards(dff: pd.DataFrame):
     """
     Generate KPI summary cards based on the filtered dataset.
@@ -602,14 +612,18 @@ def kpi_cards(dff: pd.DataFrame):
 
     cards = dbc.Row(
         [
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("N", className="text-muted"), html.H4(f"{n}")]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Treatment rate", className="text-muted"), html.H4(fmt(pct("treatment")))]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Benefits available", className="text-muted"), html.H4(fmt(pct("benefits")))]))),
-            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Family history", className="text-muted"), html.H4(fmt(pct("family_history")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Sample Size", className="text-muted"), html.H4(f"{n}")]))),
+            dbc.Col(dbc.Card(
+                dbc.CardBody([html.Div("Treatment rate", className="text-muted"), html.H4(fmt(pct("treatment")))]))),
+            dbc.Col(dbc.Card(
+                dbc.CardBody([html.Div("Benefits available", className="text-muted"), html.H4(fmt(pct("benefits")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody(
+                [html.Div("Family history", className="text-muted"), html.H4(fmt(pct("family_history")))]))),
         ],
         className="g-2",
     )
     return cards
+
 
 # App
 app = Dash(
@@ -731,7 +745,8 @@ legend = dbc.Card(
                 [
                     html.Li("treatment: whether respondent has sought treatment for mental health."),
                     html.Li("work_interfere: how often mental health interferes with work."),
-                    html.Li("benefits/care_options/wellness_program/seek_help/anonymity: workplace support indicators."),
+                    html.Li(
+                        "benefits/care_options/wellness_program/seek_help/anonymity: workplace support indicators."),
                 ]
             ),
             html.Hr(),
@@ -740,7 +755,8 @@ legend = dbc.Card(
                 [
                     html.Li("Chart 1: bars show treatment rate (%) by age group; colors represent gender."),
                     html.Li("Chart 2: bar chart shows work interference among respondents who sought treatment."),
-                    html.Li("Chart 3/4: bar charts show workplace support distributions among respondents who sought treatment."),
+                    html.Li(
+                        "Chart 3/4: bar charts show workplace support distributions among respondents who sought treatment."),
                 ]
             ),
             html.P(
@@ -771,7 +787,6 @@ app.layout = dbc.Container(
             style={"flex": "0 0 auto"},
         ),
 
-
         dbc.Row(
             style={"height": "calc(100vh - 10px - 70px)"},
             className="g-3",
@@ -782,7 +797,6 @@ app.layout = dbc.Container(
                     width=3,
                     style={"height": "100%"},
                 ),
-
 
                 dbc.Col(
                     html.Div(
@@ -817,7 +831,6 @@ app.layout = dbc.Container(
                     style={"height": "100%"},
                 ),
 
-
                 dbc.Col(
                     html.Div(legend, style={"height": "100%", "overflowY": "auto"}),
                     width=3,
@@ -827,6 +840,8 @@ app.layout = dbc.Container(
         ),
     ],
 )
+
+
 @app.callback(
     Output("kpi-area", "children"),
     Output("chart-1", "children"),
@@ -840,32 +855,30 @@ app.layout = dbc.Container(
     Input("f-company", "value"),
     Input("f-remote", "value"),
 )
-
-
 def update(year, region, gender, agebin, company, remote):
-   """
-    Update the KPI cards and all charts in response to changes in the dashboard filters.
-
-    Parameters
-    ----------
-    year : int or None
-        Selected survey year.
-    region : list or None
-        Selected region categories.
-    gender : list or None
-        Selected gender categories.
-    agebin : list or None
-        Selected age-bin categories.
-    company : list or None
-        Selected company-size categories.
-    remote : list or None
-        Selected remote work categories.
-
-    Returns
-    -------
-    tuple
-        Updated KPI cards along with the four chart components.
     """
+     Update the KPI cards and all charts in response to changes in the dashboard filters.
+
+     Parameters
+     ----------
+     year : int or None
+         Selected survey year.
+     region : list or None
+         Selected region categories.
+     gender : list or None
+         Selected gender categories.
+     agebin : list or None
+         Selected age-bin categories.
+     company : list or None
+         Selected company-size categories.
+     remote : list or None
+         Selected remote work categories.
+
+     Returns
+     -------
+     tuple
+         Updated KPI cards along with the four chart components.
+     """
     try:
         print("DATA_PATH:", DATA_PATH)
         print("df.shape:", df.shape)
@@ -874,10 +887,10 @@ def update(year, region, gender, agebin, company, remote):
         dff = filtered_df(df, year, region, gender, agebin, company, remote)
         print("filters:", year, region, gender, agebin, company, remote)
         print("dff.shape:", dff.shape)
-        h=320
+        h = 320
         c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
         c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
-        c3 = as_iframe(chart_support_yes_only(dff, "benefits","#59A14F"), height=h)
+        c3 = as_iframe(chart_support_yes_only(dff, "benefits", "#59A14F"), height=h)
         c4 = as_iframe(chart_support_yes_only(dff, "seek_help", "#F4A261"), height=h)
 
         return kpi_cards(dff), c1, c2, c3, c4
@@ -886,6 +899,7 @@ def update(year, region, gender, agebin, company, remote):
         print("CALLBACK ERROR:", repr(e))
         traceback.print_exc()
         return html.Div(f"Callback error: {e}"), None, None, None, None
+
 
 if __name__ == "__main__":
     app.run(debug=True)
