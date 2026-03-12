@@ -5,98 +5,114 @@ import altair as alt
 from dash import Dash, html, dcc, Input, Output
 import dash_bootstrap_components as dbc
 
-# Allow Altair to work with larger datasets without throwing row limit errors
+# Make Altair safer for larger tables
 alt.data_transformers.disable_max_rows()
 
-# -----------------------------
+
 # Paths & Load
-# -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
-# Make sure the dataset exists before loading
 if not DATA_PATH.exists():
     raise FileNotFoundError(f"Missing data file: {DATA_PATH}. Did you commit data/processed/cleaned.csv?")
 df = pd.read_csv(DATA_PATH)
 
-# -----------------------------
-# Helpers
-# -----------------------------
 
+# Helpers
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
-    Convert a pandas Series to string type and replace missing values.
+    Convert a pandas Series to string format and handle missing values.
 
-    This helps avoid errors in Altair and keeps missing values visible
-    instead of dropping them.
+    Parameters
+    ----------
+    s : pd.Series
+        Input series that may contain missing entries.
+
+    Returns
+    -------
+    pd.Series
+        Series converted to string type with missing values replaced by '<missing>'.
     """
-    # Convert everything to string and fill missing values
     return s.astype("string").fillna("<missing>")
 
-
 def _order_yes_no_unknown(values):
-    """
-    Order Yes/No style categories in a consistent and readable way.
+   """
+    Return a consistent ordering for categorical values such as yes/no responses.
+    
+    Parameters
+    ----------
+    values : iterable
+        Collection of categorical values.
 
-    Instead of alphabetical order, we force a logical order:
-    Yes → No → Don't know → Not sure → Missing
+    Returns
+    -------
+    list
+        List of category labels arranged in a consistent order for visualization.
     """
     priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
-
-    # Put priority values first
     ordered = [v for v in priority if v in vals]
-
-    # Add any extra categories at the end
     tail = sorted([v for v in vals if v not in ordered])
     return ordered + tail
-
 
 def _order_work_interfere(values):
     """
-    Order work interference values logically from low to high.
+    Return a consistent ordering for the work_interfere categories.
 
-    This makes the heatmap easier to understand instead of
-    showing categories alphabetically.
+    Parameters
+    ----------
+    values : iterable
+        Collection of work interference category values.
+
+    Returns
+    -------
+    list
+        Ordered list of work interference labels used for plotting.
     """
     priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
-
     ordered = [v for v in priority if v in vals]
     tail = sorted([v for v in vals if v not in ordered])
-
     return ordered + tail
-
 
 def _order_age_bin(values):
     """
-    Sort age groups numerically.
+    Order age-bin labels based on the lower value of each age range.
 
-    Without this, age bins would sort alphabetically
-    (which looks wrong on charts).
+    Parameters
+    ----------
+    values : iterable
+        Collection of age-bin labels (e.g., '20-29', '30-39', '50+').
+
+    Returns
+    -------
+    list
+        Age-bin labels sorted according to the starting age of each range.
     """
     vals = [v for v in values if pd.notna(v)]
-
     def key(v):
         try:
-            # Extract the starting number of the age bin
             return int(str(v).split("-")[0].strip())
         except Exception:
             return 10**9
-
     return sorted(pd.unique(vals), key=key)
-
 
 def _order_company_size(values):
     """
-    Sort company size categories numerically.
+    Order company-size labels according to the lower bound of each size range.
 
-    Ensures that company sizes appear in the correct order
-    instead of alphabetical order.
+    Parameters
+    ----------
+    values : iterable
+        Collection of company-size labels (e.g., '1-5', '10-50', '1000+').
+
+    Returns
+    -------
+    list
+        Company-size labels sorted by the starting value of each range.
     """
     vals = [v for v in values if pd.notna(v)]
-
     def key(v):
         s = str(v).strip()
         try:
@@ -105,16 +121,21 @@ def _order_company_size(values):
             return int(s.split("-")[0])
         except Exception:
             return 10**9
-
     return sorted(pd.unique(vals), key=key)
-
 
 def _no_data_chart(msg="No data for current filters."):
     """
-    Create a placeholder chart when no data is available.
+    Create a placeholder Altair chart displaying a message when no data is available.
 
-    This prevents the dashboard from crashing and
-    shows a helpful message instead.
+    Parameters
+    ----------
+    msg : str, default="No data for current filters."
+        Message shown in the placeholder chart.
+
+    Returns
+    -------
+    alt.Chart
+        Altair chart that displays the message as text.
     """
     return (
         alt.Chart(pd.DataFrame({"msg": [msg]}))
@@ -123,103 +144,108 @@ def _no_data_chart(msg="No data for current filters."):
         .properties(width="container", height=260)
     )
 
+def as_iframe(chart: alt.Chart, height=260):
+    def as_iframe(chart: alt.Chart, height=260):
+        """
+    Embed an Altair chart within a Dash HTML iframe.
 
-def as_iframe(chart: alt.Chart, height=280):
+    Parameters
+    ----------
+    chart : alt.Chart
+        Altair chart to be rendered.
+    height : int, default=260
+        Height of the iframe in pixels.
+
+    Returns
+    -------
+    html.Iframe
+        Dash iframe element displaying the chart as HTML.
     """
-    Convert an Altair chart into an HTML iframe.
-
-    Dash doesn't directly support Altair charts, so we embed
-    the chart inside an iframe instead.
-
-    inline=True ensures Vega scripts are included so the
-    chart works without internet.
-    """
-    chart = chart.properties(height=height, width="container")
-
+    view_h = max(120, height - 130)
+    chart = chart.properties(height=view_h, width="container")
     return html.Iframe(
-        srcDoc=chart.to_html(inline=True),
-        style={"width": "100%", "height": f"{height+90}px", "border": "0"},
+        srcDoc=chart.to_html(inline=True, embed_options={"actions": False}),
+        style={"width": "100%", "height": f"{height}px", "border": "0"},
     )
-
 
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
     """
-    Apply all dashboard filters to the dataset.
+    Apply dashboard filter selections to the dataset.
 
-    Each filter is optional and only applied if selected.
-    Returns the filtered dataframe.
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        DataFrame to be filtered.
+    year : int or None
+        Selected survey year.
+    region : list or None
+        Selected region categories.
+    genders : list or None
+        Selected gender categories.
+    age_bins : list or None
+        Selected age-bin groups.
+    company_sizes : list or None
+        Selected company-size categories.
+    remote_work : list or None
+        Selected remote work categories.
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered DataFrame used to generate KPI cards and charts.
     """
-
-    # Filter by year
     if year:
         dff = dff[dff["year"] == int(year)]
-
-    # Filter by region
     if region:
         dff = dff[dff["region"].isin(region)]
-
-    # Filter by gender
     if genders:
         dff = dff[dff["gender"].isin(genders)]
-
-    # Filter by age group
     if age_bins:
         dff = dff[dff["age_bin"].isin(age_bins)]
-
-    # Filter by company size
     if company_sizes:
         dff = dff[dff["company_size"].isin(company_sizes)]
-
-    # Filter by remote work
     if remote_work:
         dff = dff[dff["remote_work"].isin(remote_work)]
-
     return dff
 
-
-# -----------------------------
 # Charts
-# -----------------------------
-
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
     """
-    Create a grouped bar chart showing treatment rates by group.
+    Create Chart 1: a grouped bar chart showing treatment outcomes by demographic group.
 
-    The chart compares treatment rates across demographic groups
-    such as age or company size and splits by gender.
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered DataFrame used to generate the chart.
+    group_by : str, default="age_bin"
+        Column used to group respondents (e.g., age_bin or company_size).
+    show_as : str, default="percent"
+        Metric displayed on the y-axis: 'percent' for treatment rate or 'count' for totals.
+
+    Returns
+    -------
+    alt.Chart
+        Altair chart displaying treatment outcomes by group.
     """
-
-    # If no data after filtering
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 1 (Treatment by group).")
 
     g = group_by
-
-    # Check column exists
     if g not in dff.columns:
         return _no_data_chart(f"Missing column: {g}")
 
     tmp = dff.copy()
-
-    # Convert columns to strings
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
     tmp[g] = _ensure_str_series(tmp[g])
     tmp["gender"] = _ensure_str_series(tmp["gender"])
 
-    # Count treatment cases
     agg = (
         tmp.groupby([g, "gender"], dropna=False)
-        .agg(
-            n=("treatment", "size"),
-            treat_yes=("treatment", lambda x: (x == "Yes").sum())
-        )
+        .agg(n=("treatment", "size"), treat_yes=("treatment", lambda x: (x == "Yes").sum()))
         .reset_index()
     )
-
-    # Calculate percentage
     agg["rate"] = (agg["treat_yes"] / agg["n"]) * 100
 
-    # Choose correct ordering
     if g == "age_bin":
         order = _order_age_bin(tmp[g].unique())
     elif g == "company_size":
@@ -227,131 +253,573 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
     else:
         order = sorted(tmp[g].unique().tolist())
 
-    # Decide whether to show percent or count
     if show_as == "count":
         y_field = "treat_yes:Q"
         y_title = "Treatment (Yes) count"
+        tooltip = [
+            alt.Tooltip(g + ":N"),
+            alt.Tooltip("gender:N"),
+            alt.Tooltip("treat_yes:Q"),
+            alt.Tooltip("n:Q"),
+        ]
     else:
         y_field = "rate:Q"
         y_title = "Treatment rate (%)"
+        tooltip = [
+            alt.Tooltip(g + ":N"),
+            alt.Tooltip("gender:N"),
+            alt.Tooltip("rate:Q", format=".1f"),
+            alt.Tooltip("n:Q"),
+        ]
 
     chart = (
         alt.Chart(agg)
         .mark_bar()
         .encode(
             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
+            xOffset=alt.XOffset("gender:N"),   #grouped bar
             y=alt.Y(y_field, title=y_title),
             color=alt.Color("gender:N", title="Gender"),
+            tooltip=tooltip,
         )
         .properties(title="Treatment by group")
     )
 
-    return chart
-
-
-def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
+    return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+# def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart("No data for Chart 1 (Treatment by group).")
+#
+#     g = group_by
+#     if g not in dff.columns:
+#         return _no_data_chart(f"Missing column: {g}")
+#
+#     tmp = dff.copy()
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#     tmp[g] = _ensure_str_series(tmp[g])
+#     tmp["gender"] = _ensure_str_series(tmp["gender"])
+#
+#     agg = (
+#         tmp.groupby([g, "gender"], dropna=False)
+#         .agg(n=("treatment", "size"), treat_yes=("treatment", lambda x: (x == "Yes").sum()))
+#         .reset_index()
+#     )
+#     agg["rate"] = (agg["treat_yes"] / agg["n"]) * 100
+#
+#     if g == "age_bin":
+#         order = _order_age_bin(tmp[g].unique())
+#     elif g == "company_size":
+#         order = _order_company_size(tmp[g].unique())
+#     else:
+#         order = sorted(tmp[g].unique().tolist())
+#
+#     if show_as == "count":
+#         y_field = "treat_yes:Q"
+#         y_title = "Treatment (Yes) count"
+#         tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
+#                    alt.Tooltip("treat_yes:Q"), alt.Tooltip("n:Q")]
+#     else:
+#         y_field = "rate:Q"
+#         y_title = "Treatment rate (%)"
+#         tooltip = [alt.Tooltip(g + ":N"), alt.Tooltip("gender:N"),
+#                    alt.Tooltip("rate:Q", format=".1f"), alt.Tooltip("n:Q")]
+#
+#     chart = (
+#         alt.Chart(agg)
+#         .mark_bar()
+#         .encode(
+#             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
+#             y=alt.Y(y_field, title=y_title),
+#             color=alt.Color("gender:N", title="Gender"),
+#             tooltip=tooltip,
+#         )
+#         .properties(title="Treatment by group")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     """
-    Create a heatmap showing treatment vs work interference.
+    Create Chart 2: a bar chart showing work interference levels among respondents
+    who reported seeking treatment.
 
-    Shows how often mental health interferes with work
-    compared to treatment status.
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered DataFrame used for plotting.
+    metric : str, default="count"
+        Metric displayed on the y-axis ('count' or 'percent').
+
+    Returns
+    -------
+    alt.Chart
+        Altair bar chart illustrating the distribution of work_interfere categories.
     """
-
     if dff is None or len(dff) == 0:
-        return _no_data_chart("No data for Chart 2.")
+        return _no_data_chart("No data for Chart 2 (Work interference).")
+
+    if "work_interfere" not in dff.columns or "treatment" not in dff.columns:
+        return _no_data_chart("Missing required columns for Chart 2.")
 
     tmp = dff.copy()
-
     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
-    # Count combinations
+    #treatment = Yes
+    tmp = tmp[tmp["treatment"] == "Yes"]
+
+    if len(tmp) == 0:
+        return _no_data_chart("No treatment='Yes' data for Chart 2.")
+
     counts = (
-        tmp.groupby(["work_interfere", "treatment"])
+        tmp.groupby(["work_interfere"], dropna=False)
         .size()
         .reset_index(name="count")
     )
 
-    # Convert to percentages
-    totals = counts.groupby("work_interfere")["count"].transform("sum")
-    counts["value"] = (counts["count"] / totals) * 100
+    total = counts["count"].sum()
+    counts["pct"] = (counts["count"] / total) * 100
 
-    chart = (
-        alt.Chart(counts)
-        .mark_rect()
-        .encode(
-            x="work_interfere:N",
-            y="treatment:N",
-            color="value:Q",
-        )
-        .properties(title="Work interference vs Treatment")
-    )
+    x_order = _order_work_interfere(tmp["work_interfere"].unique())
 
-    return chart
-
-
-def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
-    """
-    Create a stacked bar chart comparing workplace support and treatment.
-
-    Shows how workplace support factors relate to treatment rates.
-    """
-
-    if dff is None or len(dff) == 0:
-        return _no_data_chart("No data available.")
-
-    tmp = dff.copy()
-
-    tmp[factor] = _ensure_str_series(tmp[factor])
-    tmp["treatment"] = _ensure_str_series(tmp["treatment"])
-
-    counts = (
-        tmp.groupby([factor, "treatment"])
-        .size()
-        .reset_index(name="count")
-    )
-
-    totals = counts.groupby(factor)["count"].transform("sum")
-    counts["pct"] = (counts["count"] / totals) * 100
+    if metric == "percent":
+        y_field = "pct:Q"
+        y_title = "Percent of treatment = Yes respondents"
+        tooltip = [
+            alt.Tooltip("work_interfere:N", title="Work interference"),
+            alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+            alt.Tooltip("count:Q", title="Count"),
+        ]
+    else:
+        y_field = "count:Q"
+        y_title = "Count of treatment = Yes respondents"
+        tooltip = [
+            alt.Tooltip("work_interfere:N", title="Work interference"),
+            alt.Tooltip("count:Q", title="Count"),
+            alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+        ]
 
     chart = (
         alt.Chart(counts)
         .mark_bar()
         .encode(
-            x=f"{factor}:N",
-            y="pct:Q",
-            color="treatment:N",
+            x=alt.X("work_interfere:N", sort=x_order, title="Work interference"),
+            y=alt.Y(y_field, title=y_title),
+            tooltip=tooltip,
         )
-        .properties(title=f"{factor} vs Treatment")
+        .properties(title="Work interference")
     )
 
-    return chart
+    return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+# def chart_interfere_heatmap(dff: pd.DataFrame, metric="row_percent"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart("No data for Chart 2 (Work interference heatmap).")
+#
+#     if "work_interfere" not in dff.columns or "treatment" not in dff.columns:
+#         return _no_data_chart("Missing required columns for Chart 2.")
+#
+#     tmp = dff.copy()
+#     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#
+#     counts = (
+#         tmp.groupby(["work_interfere", "treatment"], dropna=False)
+#         .size()
+#         .reset_index(name="count")
+#     )
+#
+#     if metric == "count":
+#         counts["value"] = counts["count"]
+#         legend_title = "Count"
+#         tooltip = [
+#             alt.Tooltip("work_interfere:N"),
+#             alt.Tooltip("treatment:N"),
+#             alt.Tooltip("count:Q"),
+#         ]
+#     else:
+#         totals = counts.groupby("work_interfere")["count"].transform("sum")
+#         counts["value"] = (counts["count"] / totals) * 100
+#         legend_title = "Row %"
+#         tooltip = [
+#             alt.Tooltip("work_interfere:N"),
+#             alt.Tooltip("treatment:N"),
+#             alt.Tooltip("value:Q", format=".1f"),
+#             alt.Tooltip("count:Q"),
+#         ]
+#
+#     x_order = _order_work_interfere(tmp["work_interfere"].unique())
+#     y_order = _order_yes_no_unknown(tmp["treatment"].unique())
+#
+#     chart = (
+#         alt.Chart(counts)
+#         .mark_rect()
+#         .encode(
+#             x=alt.X("work_interfere:N", sort=x_order, title="Work interference"),
+#             y=alt.Y("treatment:N", sort=y_order, title="Treatment"),
+#             color=alt.Color("value:Q", title=legend_title),
+#             tooltip=tooltip,
+#         )
+#         .properties(title="Work interference × Treatment")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
+# def chart_support_vs_treatment(dff: pd.DataFrame, factor="benefits"):
+#     if dff is None or len(dff) == 0:
+#         return _no_data_chart(f"No data for Chart (Support: {factor}).")
+#
+#     if factor not in dff.columns or "treatment" not in dff.columns:
+#         return _no_data_chart(f"Missing required columns for factor: {factor}")
+#
+#     tmp = dff.copy()
+#     tmp[factor] = _ensure_str_series(tmp[factor])
+#     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+#
+#     counts = (
+#         tmp.groupby([factor, "treatment"], dropna=False)
+#         .size()
+#         .reset_index(name="count")
+#     )
+#     totals = counts.groupby(factor)["count"].transform("sum")
+#     counts["pct"] = (counts["count"] / totals) * 100
+#
+#     x_order = _order_yes_no_unknown(tmp[factor].unique())
+#     y_order = _order_yes_no_unknown(tmp["treatment"].unique())
+#
+#     nice_title = factor.replace("_", " ").title()
+#
+#     chart = (
+#         alt.Chart(counts)
+#         .mark_bar()
+#         .encode(
+#             x=alt.X(f"{factor}:N", sort=x_order, title=nice_title),
+#             y=alt.Y("pct:Q", stack="normalize", title="Share within group"),
+#             color=alt.Color("treatment:N", sort=y_order, title="Treatment"),
+#             tooltip=[
+#                 alt.Tooltip(f"{factor}:N", title=nice_title),
+#                 alt.Tooltip("treatment:N", title="Treatment"),
+#                 alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+#                 alt.Tooltip("count:Q", title="Count"),
+#             ],
+#         )
+#         .properties(title=f"{nice_title} vs Treatment (100% stacked)")
+#     )
+#
+#     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
+
+def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C78A8"):
+   """
+    Create Charts 3 and 4: bar charts showing the distribution of workplace
+    support factors among respondents who sought treatment.
+
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered DataFrame used for plotting.
+    factor : str, default="benefits"
+        Workplace support variable to visualize (e.g., benefits or seek_help).
+
+    Returns
+    -------
+    alt.Chart
+        Altair bar chart displaying the percentage distribution for the selected factor.
+    """
+    if dff is None or len(dff) == 0:
+        return _no_data_chart(f"No data for Chart ({factor}).")
+
+    if factor not in dff.columns or "treatment" not in dff.columns:
+        return _no_data_chart(f"Missing required columns for factor: {factor}")
+
+    tmp = dff.copy()
+    tmp[factor] = _ensure_str_series(tmp[factor])
+    tmp["treatment"] = _ensure_str_series(tmp["treatment"])
+
+    #treatment = Yes
+    tmp = tmp[tmp["treatment"] == "Yes"]
+
+    if len(tmp) == 0:
+        return _no_data_chart(f"No treatment='Yes' data for factor: {factor}")
+
+    counts = (
+        tmp.groupby([factor], dropna=False)
+        .size()
+        .reset_index(name="count")
+    )
+    total = counts["count"].sum()
+    counts["pct"] = (counts["count"] / total) * 100
+
+    x_order = _order_yes_no_unknown(tmp[factor].unique())
+    nice_title = factor.replace("_", " ").title()
+
+    chart = (
+        alt.Chart(counts)
+        .mark_bar(color=bar_color)
+        .encode(
+            x=alt.X(f"{factor}:N", sort=x_order, title=nice_title),
+            y=alt.Y("pct:Q", title="Percent of treatment = Yes respondents"),
+            tooltip=[
+                alt.Tooltip(f"{factor}:N", title=nice_title),
+                alt.Tooltip("pct:Q", title="Percent", format=".1f"),
+                alt.Tooltip("count:Q", title="Count"),
+            ],
+        )
+        .properties(title=f"{nice_title} Support")
+    )
+
+    return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
 def kpi_cards(dff: pd.DataFrame):
     """
-    Create KPI summary cards.
+    Generate KPI summary cards based on the filtered dataset.
 
-    Shows:
-    - Total sample size
-    - Treatment rate
-    - Benefits availability
-    - Family history rate
+    Parameters
+    ----------
+    dff : pd.DataFrame
+        Filtered DataFrame used to calculate summary metrics.
+
+    Returns
+    -------
+    dbc.Row
+        Bootstrap row containing four KPI summary cards.
     """
-
     n = len(dff)
 
-    def pct(col):
+    def pct(col, val="Yes"):
         if n == 0:
             return None
-        return (dff[col].astype(str) == "Yes").mean() * 100
+        if col not in dff.columns:
+            return None
+        return (dff[col].astype(str).eq(val).mean()) * 100
 
-    return dbc.Row([
-        dbc.Col(dbc.Card(dbc.CardBody([html.H4(n), html.Div("Sample Size")]))),
-        dbc.Col(dbc.Card(dbc.CardBody([html.H4(f"{pct('treatment'):.1f}%"), html.Div("Treatment Rate")]))),
-    ])
+    def fmt(x):
+        return "N/A" if x is None else f"{x:.1f}%"
+
+    cards = dbc.Row(
+        [
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("N", className="text-muted"), html.H4(f"{n}")]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Treatment rate", className="text-muted"), html.H4(fmt(pct("treatment")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Benefits available", className="text-muted"), html.H4(fmt(pct("benefits")))]))),
+            dbc.Col(dbc.Card(dbc.CardBody([html.Div("Family history", className="text-muted"), html.H4(fmt(pct("family_history")))]))),
+        ],
+        className="g-2",
+    )
+    return cards
+
+# App
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    title="Workplace Mental Health Dashboard"
+)
+server = app.server
+
+years = sorted(df["year"].dropna().unique())
+regions = sorted(df["region"].dropna().unique())
+genders = sorted(df["gender"].dropna().unique())
+age_bins = _order_age_bin(df["age_bin"].dropna().unique())
+company_sizes = _order_company_size(df["company_size"].dropna().unique())
+remote_vals = sorted(df["remote_work"].dropna().unique())
+filters = dbc.Card(
+    dbc.CardBody(
+        [
+            html.H5("Filters", className="mb-4"),
+
+            html.Label("Year", className="mb-2 fw-semibold"),
+            dcc.Dropdown(
+                years,
+                years[0] if years else None,
+                id="f-year",
+                clearable=False
+            ),
+
+            html.Label("Region", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                regions,
+                ["North America"] if "North America" in regions else regions[:1],
+                id="f-region",
+                multi=True
+            ),
+
+            html.Hr(className="my-4"),
+
+            html.Label("Gender", className="mb-2 fw-semibold"),
+            dcc.Dropdown(
+                genders,
+                genders,
+                id="f-gender",
+                multi=True
+            ),
+
+            html.Label("Age bin", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                age_bins,
+                age_bins,
+                id="f-agebin",
+                multi=True
+            ),
+
+            html.Label("Company size", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                company_sizes,
+                id="f-company",
+                multi=True
+            ),
+
+            html.Label("Remote work", className="mt-4 mb-2 fw-semibold"),
+            dcc.Dropdown(
+                remote_vals,
+                id="f-remote",
+                multi=True
+            ),
+        ],
+        style={
+            "padding": "24px",
+        },
+    ),
+    className="h-100 shadow-sm",
+)
+# filters = dbc.Card(
+#     dbc.CardBody(
+#         [
+#             html.H5("Filters"),
+#             html.Label("Year"),
+#             dcc.Dropdown(years, years[0] if years else None, id="f-year", clearable=False),
+#
+#             html.Br(),
+#             html.Label("Region"),
+#             dcc.Dropdown(
+#                 regions,
+#                 ["North America"] if "North America" in regions else regions[:1],
+#                 id="f-region",
+#                 multi=True
+#             ),
+#
+#             html.Hr(),
+#             html.Label("Gender"),
+#             dcc.Dropdown(genders, genders, id="f-gender", multi=True),
+#
+#             html.Br(),
+#             html.Label("Age bin"),
+#             dcc.Dropdown(age_bins, age_bins, id="f-agebin", multi=True),
+#
+#             html.Br(),
+#             html.Label("Company size"),
+#             dcc.Dropdown(company_sizes, id="f-company", multi=True),
+#
+#             html.Br(),
+#             html.Label("Remote work"),
+#             dcc.Dropdown(remote_vals, id="f-remote", multi=True),
+#         ]
+#     ),
+#     className="h-100",
+# )
+
+legend = dbc.Card(
+    dbc.CardBody(
+        [
+            html.H5("Legend & Notes"),
+            html.P("All charts update based on the filters on the left."),
+            html.Hr(),
+            html.H6("Definitions"),
+            html.Ul(
+                [
+                    html.Li("treatment: whether respondent has sought treatment for mental health."),
+                    html.Li("work_interfere: how often mental health interferes with work."),
+                    html.Li("benefits/care_options/wellness_program/seek_help/anonymity: workplace support indicators."),
+                ]
+            ),
+            html.Hr(),
+            html.H6("Encodings"),
+            html.Ul(
+                [
+                    html.Li("Chart 1: bars show treatment rate (%) by age group; colors represent gender."),
+                    html.Li("Chart 2: bar chart shows work interference among respondents who sought treatment."),
+                    html.Li("Chart 3/4: bar charts show workplace support distributions among respondents who sought treatment."),
+                ]
+            ),
+            html.P(
+                "Data includes 'Don't know/Unknown/<missing>' categories for transparency.",
+                className="text-muted",
+                style={"fontSize": "0.9em"},
+            ),
+        ]
+    ),
+    className="h-100",
+)
+
+app.layout = dbc.Container(
+    fluid=True,
+    style={
+        "height": "calc(100vh - 10px)",
+        "overflow": "hidden",
+        "paddingBottom": "10px",
+    },
+    children=[
+
+        html.Div(
+            [
+                html.H2("Workplace Mental Health Dashboard", style={"marginBottom": "4px"}),
+                html.P("Explore treatment rates and workplace factors across groups.",
+                       className="text-muted", style={"marginBottom": "8px"}),
+            ],
+            style={"flex": "0 0 auto"},
+        ),
 
 
+        dbc.Row(
+            style={"height": "calc(100vh - 10px - 70px)"},
+            className="g-3",
+            children=[
+
+                dbc.Col(
+                    html.Div(filters, style={"height": "100%", "overflowY": "auto"}),
+                    width=3,
+                    style={"height": "100%"},
+                ),
+
+
+                dbc.Col(
+                    html.Div(
+                        [
+                            html.Div(id="kpi-area", style={"flex": "0 0 auto"}),
+                            html.Div(
+                                [
+                                    html.Div(id="chart-1", style={"minHeight": "0"}),
+                                    html.Div(id="chart-2", style={"minHeight": "0"}),
+                                    html.Div(id="chart-3", style={"minHeight": "0"}),
+                                    html.Div(id="chart-4", style={"minHeight": "0"}),
+                                ],
+                                style={
+                                    "flex": "1 1 auto",
+                                    "minHeight": "0",
+                                    "overflowY": "auto",
+                                    "display": "grid",
+                                    "gridTemplateColumns": "1fr 1fr",
+                                    "gap": "10px",
+                                    "paddingRight": "2px",
+                                },
+                            ),
+                        ],
+                        style={
+                            "height": "100%",
+                            "display": "flex",
+                            "flexDirection": "column",
+                            "minHeight": "0",
+                        },
+                    ),
+                    width=6,
+                    style={"height": "100%"},
+                ),
+
+
+                dbc.Col(
+                    html.Div(legend, style={"height": "100%", "overflowY": "auto"}),
+                    width=3,
+                    style={"height": "100%"},
+                ),
+            ],
+        ),
+    ],
+)
 @app.callback(
     Output("kpi-area", "children"),
     Output("chart-1", "children"),
@@ -365,30 +833,52 @@ def kpi_cards(dff: pd.DataFrame):
     Input("f-company", "value"),
     Input("f-remote", "value"),
 )
+
+
 def update(year, region, gender, agebin, company, remote):
-    """
-    Main dashboard update function.
+   """
+    Update the KPI cards and all charts in response to changes in the dashboard filters.
 
-    This function runs whenever a filter changes.
-    It filters the data and updates all charts.
-    """
+    Parameters
+    ----------
+    year : int or None
+        Selected survey year.
+    region : list or None
+        Selected region categories.
+    gender : list or None
+        Selected gender categories.
+    agebin : list or None
+        Selected age-bin categories.
+    company : list or None
+        Selected company-size categories.
+    remote : list or None
+        Selected remote work categories.
 
+    Returns
+    -------
+    tuple
+        Updated KPI cards along with the four chart components.
+    """
     try:
-        # Apply filters
-        dff = filtered_df(df, year, region, gender, agebin, company, remote)
+        print("DATA_PATH:", DATA_PATH)
+        print("df.shape:", df.shape)
+        print("df.columns:", list(df.columns))
 
-        # Create charts
-        c1 = as_iframe(chart_treatment_by_group(dff), 300)
-        c2 = as_iframe(chart_interfere_heatmap(dff), 300)
-        c3 = as_iframe(chart_support_vs_treatment(dff, "benefits"), 300)
-        c4 = as_iframe(chart_support_vs_treatment(dff, "seek_help"), 300)
+        dff = filtered_df(df, year, region, gender, agebin, company, remote)
+        print("filters:", year, region, gender, agebin, company, remote)
+        print("dff.shape:", dff.shape)
+        h=320
+        c1 = as_iframe(chart_treatment_by_group(dff, "age_bin", "percent"), height=h)
+        c2 = as_iframe(chart_interfere_heatmap(dff, "row_percent"), height=h)
+        c3 = as_iframe(chart_support_yes_only(dff, "benefits","#59A14F"), height=h)
+        c4 = as_iframe(chart_support_yes_only(dff, "seek_help", "#F4A261"), height=h)
 
         return kpi_cards(dff), c1, c2, c3, c4
 
     except Exception as e:
+        print("CALLBACK ERROR:", repr(e))
         traceback.print_exc()
-        return html.Div(f"Error: {e}"), None, None, None, None
-
+        return html.Div(f"Callback error: {e}"), None, None, None, None
 
 if __name__ == "__main__":
     app.run(debug=True)

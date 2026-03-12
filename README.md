@@ -3,6 +3,7 @@
 An interactive dashboard for exploring mental health attitudes, workplace culture, and organizational support in the technology industry.
 
 🚧 **Deployed app link:** 
+🚀 **Live Dashboard**
 
 https://mental-health-tech-industry-551-project-bbdv.onrender.com/
 
