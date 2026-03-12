@@ -8,9 +8,8 @@ import dash_bootstrap_components as dbc
 # Make Altair safer for larger tables
 alt.data_transformers.disable_max_rows()
 
-# -----------------------------
+
 # Paths & Load
-# -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
@@ -19,9 +18,8 @@ if not DATA_PATH.exists():
     raise FileNotFoundError(f"Missing data file: {DATA_PATH}. Did you commit data/processed/cleaned.csv?")
 df = pd.read_csv(DATA_PATH)
 
-# -----------------------------
+
 # Helpers
-# -----------------------------
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
     Convert a pandas Series to string type and replace missing values.
@@ -210,10 +208,7 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
         dff = dff[dff["remote_work"].isin(remote_work)]
     return dff
 
-# -----------------------------
 # Charts
-# -----------------------------
-
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
     """
     Create Chart 1: a grouped bar chart of treatment by demographic group.
@@ -282,7 +277,7 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
         .mark_bar()
         .encode(
             x=alt.X(f"{g}:N", sort=order, title=g.replace("_", " ").title()),
-            xOffset=alt.XOffset("gender:N"),   # 关键：并排 grouped bar
+            xOffset=alt.XOffset("gender:N"),   #grouped bar
             y=alt.Y(y_field, title=y_title),
             color=alt.Color("gender:N", title="Gender"),
             tooltip=tooltip,
@@ -369,7 +364,7 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     tmp["work_interfere"] = _ensure_str_series(tmp["work_interfere"])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
-    # 只保留 treatment = Yes
+    #treatment = Yes
     tmp = tmp[tmp["treatment"] == "Yes"]
 
     if len(tmp) == 0:
@@ -538,7 +533,7 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C7
     tmp[factor] = _ensure_str_series(tmp[factor])
     tmp["treatment"] = _ensure_str_series(tmp["treatment"])
 
-    # 只保留 treatment = Yes
+    #treatment = Yes
     tmp = tmp[tmp["treatment"] == "Yes"]
 
     if len(tmp) == 0:
@@ -609,9 +604,7 @@ def kpi_cards(dff: pd.DataFrame):
     )
     return cards
 
-# -----------------------------
 # App
-# -----------------------------
 app = Dash(
     __name__,
     external_stylesheets=[dbc.themes.BOOTSTRAP],
