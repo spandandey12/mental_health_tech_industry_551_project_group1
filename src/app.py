@@ -22,34 +22,34 @@ df = pd.read_csv(DATA_PATH)
 # Helpers
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     """
-    Convert a pandas Series to string type and replace missing values.
+    Convert a pandas Series to string format and handle missing values.
 
     Parameters
     ----------
     s : pd.Series
-        Input series that may contain missing values.
+        Input series that may contain missing entries.
 
     Returns
     -------
     pd.Series
-        String-formatted series with missing values replaced by '<missing>'.
+        Series converted to string type with missing values replaced by '<missing>'.
     """
     return s.astype("string").fillna("<missing>")
 
 def _order_yes_no_unknown(values):
+   """
+    Return a consistent ordering for categorical values such as yes/no responses.
+    
+    Parameters
+    ----------
+    values : iterable
+        Collection of categorical values.
+
+    Returns
+    -------
+    list
+        List of category labels arranged in a consistent order for visualization.
     """
-       Return a consistent display order for yes/no-style categorical values.
-
-       Parameters
-       ----------
-       values : iterable
-           Collection of category values.
-
-       Returns
-       -------
-       list
-           Ordered list of category labels for plotting.
-       """
     priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
     ordered = [v for v in priority if v in vals]
@@ -58,7 +58,7 @@ def _order_yes_no_unknown(values):
 
 def _order_work_interfere(values):
     """
-    Return a consistent display order for the work_interfere variable.
+    Return a consistent ordering for the work_interfere categories.
 
     Parameters
     ----------
@@ -68,7 +68,7 @@ def _order_work_interfere(values):
     Returns
     -------
     list
-        Ordered list of work interference labels for plotting.
+        Ordered list of work interference labels used for plotting.
     """
     priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
     vals = list(pd.unique([v for v in values if pd.notna(v)]))
@@ -78,17 +78,17 @@ def _order_work_interfere(values):
 
 def _order_age_bin(values):
     """
-    Sort age-bin labels by the lower bound of each age range.
+    Order age-bin labels based on the lower value of each age range.
 
     Parameters
     ----------
     values : iterable
-        Collection of age-bin labels such as '20-29' or '50+'.
+        Collection of age-bin labels (e.g., '20-29', '30-39', '50+').
 
     Returns
     -------
     list
-        Ordered list of age-bin labels.
+        Age-bin labels sorted according to the starting age of each range.
     """
     vals = [v for v in values if pd.notna(v)]
     def key(v):
@@ -100,17 +100,17 @@ def _order_age_bin(values):
 
 def _order_company_size(values):
     """
-    Sort company-size labels by the lower bound of each size range.
+    Order company-size labels according to the lower bound of each size range.
 
     Parameters
     ----------
     values : iterable
-        Collection of company size labels such as '1-5' or '1000+'.
+        Collection of company-size labels (e.g., '1-5', '10-50', '1000+').
 
     Returns
     -------
     list
-        Ordered list of company-size labels.
+        Company-size labels sorted by the starting value of each range.
     """
     vals = [v for v in values if pd.notna(v)]
     def key(v):
@@ -125,17 +125,17 @@ def _order_company_size(values):
 
 def _no_data_chart(msg="No data for current filters."):
     """
-    Create a fallback Altair text chart when no data is available.
+    Create a placeholder Altair chart displaying a message when no data is available.
 
     Parameters
     ----------
     msg : str, default="No data for current filters."
-        Message displayed in the placeholder chart.
+        Message shown in the placeholder chart.
 
     Returns
     -------
     alt.Chart
-        Altair chart containing a text message.
+        Altair chart that displays the message as text.
     """
     return (
         alt.Chart(pd.DataFrame({"msg": [msg]}))
@@ -147,20 +147,20 @@ def _no_data_chart(msg="No data for current filters."):
 def as_iframe(chart: alt.Chart, height=260):
     def as_iframe(chart: alt.Chart, height=260):
         """
-        Render an Altair chart inside a Dash HTML iframe.
+    Embed an Altair chart within a Dash HTML iframe.
 
-        Parameters
-        ----------
-        chart : alt.Chart
-            Altair chart object to render.
-        height : int, default=260
-            Height of the iframe in pixels.
+    Parameters
+    ----------
+    chart : alt.Chart
+        Altair chart to be rendered.
+    height : int, default=260
+        Height of the iframe in pixels.
 
-        Returns
-        -------
-        html.Iframe
-            Dash iframe component containing the chart HTML.
-        """
+    Returns
+    -------
+    html.Iframe
+        Dash iframe element displaying the chart as HTML.
+    """
     view_h = max(120, height - 130)
     chart = chart.properties(height=view_h, width="container")
     return html.Iframe(
@@ -170,29 +170,29 @@ def as_iframe(chart: alt.Chart, height=260):
 
 def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
     """
-    Filter the dataset using the selected dashboard controls.
+    Apply dashboard filter selections to the dataset.
 
     Parameters
     ----------
     dff : pd.DataFrame
-        Input dataframe to filter.
+        DataFrame to be filtered.
     year : int or None
         Selected survey year.
     region : list or None
-        Selected region values.
+        Selected region categories.
     genders : list or None
-        Selected gender values.
+        Selected gender categories.
     age_bins : list or None
-        Selected age-bin values.
+        Selected age-bin groups.
     company_sizes : list or None
-        Selected company-size values.
+        Selected company-size categories.
     remote_work : list or None
-        Selected remote work values.
+        Selected remote work categories.
 
     Returns
     -------
     pd.DataFrame
-        Filtered dataframe used for KPI cards and charts.
+        Filtered DataFrame used to generate KPI cards and charts.
     """
     if year:
         dff = dff[dff["year"] == int(year)]
@@ -211,21 +211,21 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
 # Charts
 def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="percent"):
     """
-    Create Chart 1: a grouped bar chart of treatment by demographic group.
+    Create Chart 1: a grouped bar chart showing treatment outcomes by demographic group.
 
     Parameters
     ----------
     dff : pd.DataFrame
-        Filtered dataframe used for plotting.
+        Filtered DataFrame used to generate the chart.
     group_by : str, default="age_bin"
-        Column used to group respondents, such as age_bin or company_size.
+        Column used to group respondents (e.g., age_bin or company_size).
     show_as : str, default="percent"
-        Display metric. Use 'percent' for treatment rate or 'count' for counts.
+        Metric displayed on the y-axis: 'percent' for treatment rate or 'count' for totals.
 
     Returns
     -------
     alt.Chart
-        Altair grouped bar chart.
+        Altair chart displaying treatment outcomes by group.
     """
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 1 (Treatment by group).")
@@ -339,20 +339,20 @@ def chart_treatment_by_group(dff: pd.DataFrame, group_by="age_bin", show_as="per
 #     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
     """
-    Create Chart 2: a bar chart of work interference among respondents
-    who sought treatment.
+    Create Chart 2: a bar chart showing work interference levels among respondents
+    who reported seeking treatment.
 
     Parameters
     ----------
     dff : pd.DataFrame
-        Filtered dataframe used for plotting.
+        Filtered DataFrame used for plotting.
     metric : str, default="count"
-        Metric shown on the y-axis. Use 'count' or 'percent'.
+        Metric displayed on the y-axis ('count' or 'percent').
 
     Returns
     -------
     alt.Chart
-        Altair bar chart showing the distribution of work_interfere values.
+        Altair bar chart illustrating the distribution of work_interfere categories.
     """
     if dff is None or len(dff) == 0:
         return _no_data_chart("No data for Chart 2 (Work interference).")
@@ -507,21 +507,21 @@ def chart_interfere_heatmap(dff: pd.DataFrame, metric="count"):
 #     return chart.configure_title(fontSize=14).configure_axis(labelFontSize=11, titleFontSize=12)
 
 def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C78A8"):
-    """
-    Create Charts 3 and 4: distributions of workplace support variables
-    among respondents who sought treatment.
+   """
+    Create Charts 3 and 4: bar charts showing the distribution of workplace
+    support factors among respondents who sought treatment.
 
     Parameters
     ----------
     dff : pd.DataFrame
-        Filtered dataframe used for plotting.
+        Filtered DataFrame used for plotting.
     factor : str, default="benefits"
-        Support-related variable to visualize, such as benefits or seek_help.
+        Workplace support variable to visualize (e.g., benefits or seek_help).
 
     Returns
     -------
     alt.Chart
-        Altair bar chart showing the percentage distribution for the factor.
+        Altair bar chart displaying the percentage distribution for the selected factor.
     """
     if dff is None or len(dff) == 0:
         return _no_data_chart(f"No data for Chart ({factor}).")
@@ -569,17 +569,17 @@ def chart_support_yes_only(dff: pd.DataFrame, factor="benefits", bar_color="#4C7
 
 def kpi_cards(dff: pd.DataFrame):
     """
-    Create KPI summary cards for the filtered dataset.
+    Generate KPI summary cards based on the filtered dataset.
 
     Parameters
     ----------
     dff : pd.DataFrame
-        Filtered dataframe used to compute summary statistics.
+        Filtered DataFrame used to calculate summary metrics.
 
     Returns
     -------
     dbc.Row
-        Bootstrap row containing four KPI cards.
+        Bootstrap row containing four KPI summary cards.
     """
     n = len(dff)
 
@@ -836,28 +836,28 @@ app.layout = dbc.Container(
 
 
 def update(year, region, gender, agebin, company, remote):
-    """
-    Update the KPI cards and all charts whenever a dashboard filter changes.
+   """
+    Update the KPI cards and all charts in response to changes in the dashboard filters.
 
     Parameters
     ----------
     year : int or None
         Selected survey year.
     region : list or None
-        Selected region values.
+        Selected region categories.
     gender : list or None
-        Selected gender values.
+        Selected gender categories.
     agebin : list or None
-        Selected age-bin values.
+        Selected age-bin categories.
     company : list or None
-        Selected company-size values.
+        Selected company-size categories.
     remote : list or None
-        Selected remote work values.
+        Selected remote work categories.
 
     Returns
     -------
     tuple
-        Updated KPI cards and four chart components.
+        Updated KPI cards along with the four chart components.
     """
     try:
         print("DATA_PATH:", DATA_PATH)
