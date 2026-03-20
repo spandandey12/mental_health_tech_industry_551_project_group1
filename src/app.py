@@ -1,34 +1,15 @@
-"""
-Workplace Mental Health Dashboard
-
-This Dash application provides an interactive dashboard for exploring
-mental health treatment patterns and workplace support factors across
-demographic and organizational groups.
-
-Main features
--------------
-- Filter survey data by year, region, gender, age bin, company size,
-  and remote work status.
-- Display KPI summary cards for sample size, treatment rate,
-  benefits availability, and family history.
-- Show linked Altair charts embedded in Dash via an iframe.
-- Support inter-plot interaction: selecting an age group in the first
-  chart filters the remaining charts.
-- Use a professional dashboard layout with cards, spacing, and
-  consistent visual styling.
-"""
-
 from pathlib import Path
-import pandas as pd
 import traceback
-import altair as alt
-from dash import Dash, html, dcc, Input, Output
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from dash import Dash, dcc, html, Input, Output, State, callback_context
 import dash_bootstrap_components as dbc
 
-alt.data_transformers.disable_max_rows()
-
 # -----------------------------
-# Paths & Load
+# Paths / data
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = BASE_DIR.parent
@@ -36,102 +17,33 @@ DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 if not DATA_PATH.exists():
     raise FileNotFoundError(
-        f"Missing data file: {DATA_PATH}. Did you commit data/processed/cleaned.csv?"
+        f"Missing data file: {DATA_PATH}. Please make sure cleaned.csv is in data/processed/."
     )
 
-df = pd.read_csv(DATA_PATH)
 
-# -----------------------------
-# Theme / Style
-# -----------------------------
-COLORS = {
-    "bg": "#F7F9FC",
-    "panel": "#FFFFFF",
-    "border": "#E5EAF2",
-    "text": "#1F2937",
-    "muted": "#6B7280",
-    "primary": "#2F6BFF",
-    "primary_soft": "#EEF4FF",
-    "shadow": "0 4px 16px rgba(15, 23, 42, 0.06)",
-    "success": "#59A14F",
-    "warning": "#F4A261",
-    "chart_blue": "#4C78A8",
-    "chart_teal": "#72B7B2",
-    "chart_purple": "#9C89B8",
-}
+def _safe_unique(values):
+    return list(pd.Series(list(values), dtype="object").dropna().drop_duplicates())
 
-CARD_STYLE = {
-    "backgroundColor": COLORS["panel"],
-    "border": f"1px solid {COLORS['border']}",
-    "borderRadius": "16px",
-    "boxShadow": COLORS["shadow"],
-}
 
-SECTION_TITLE_STYLE = {
-    "fontSize": "15px",
-    "fontWeight": "700",
-    "color": COLORS["text"],
-    "marginBottom": "12px",
-}
-
-LABEL_STYLE = {
-    "fontSize": "13px",
-    "fontWeight": "600",
-    "color": COLORS["text"],
-    "marginBottom": "6px",
-    "display": "block",
-}
-
-PAGE_TITLE_STYLE = {
-    "fontSize": "2.1rem",
-    "fontWeight": "700",
-    "color": COLORS["text"],
-    "marginBottom": "2px",
-}
-
-PAGE_SUBTITLE_STYLE = {
-    "color": COLORS["muted"],
-    "fontSize": "1rem",
-    "marginBottom": "0",
-}
-
-# -----------------------------
-# Helpers
-# -----------------------------
 def _ensure_str_series(s: pd.Series) -> pd.Series:
     return s.astype("string").fillna("<missing>")
 
 
-def _order_yes_no_unknown(values):
-    priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
-    vals = list(pd.unique([v for v in values if pd.notna(v)]))
-    ordered = [v for v in priority if v in vals]
-    tail = sorted([v for v in vals if v not in ordered])
-    return ordered + tail
-
-
-def _order_work_interfere(values):
-    priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
-    vals = list(pd.unique([v for v in values if pd.notna(v)]))
-    ordered = [v for v in priority if v in vals]
-    tail = sorted([v for v in vals if v not in ordered])
-    return ordered + tail
-
-
 def _order_age_bin(values):
-    vals = [v for v in values if pd.notna(v)]
+    vals = _safe_unique(values)
 
     def key(v):
+        s = str(v).strip()
         try:
-            return int(str(v).split("-")[0].replace("+", "").strip())
+            return int(s.split("-")[0].replace("+", ""))
         except Exception:
             return 10**9
 
-    return sorted(pd.unique(vals), key=key)
+    return sorted(vals, key=key)
 
 
 def _order_company_size(values):
-    vals = [v for v in values if pd.notna(v)]
+    vals = _safe_unique(values)
 
     def key(v):
         s = str(v).strip()
@@ -142,45 +54,117 @@ def _order_company_size(values):
         except Exception:
             return 10**9
 
-    return sorted(pd.unique(vals), key=key)
+    return sorted(vals, key=key)
 
 
-def _no_data_chart(msg="No data for current filters."):
-    return (
-        alt.Chart(pd.DataFrame({"msg": [msg]}))
-        .mark_text(size=14, color="#6B7280")
-        .encode(text="msg:N")
-        .properties(width=300, height=260)
-    )
+def _order_yes_no_unknown(values):
+    priority = ["Yes", "No", "Don't know", "Not sure", "Maybe", "<missing>"]
+    vals = _safe_unique(values)
+    ordered = [v for v in priority if v in vals]
+    ordered += sorted([v for v in vals if v not in ordered])
+    return ordered
 
 
-def as_iframe(chart, height=700):
-    return html.Iframe(
-        srcDoc=chart.to_html(
-            inline=True,
-            embed_options={
-                "actions": False,
-                "renderer": "svg",
-            },
-        ),
-        style={
-            "width": "100%",
-            "height": f"{height}px",
-            "border": "0",
-            "borderRadius": "12px",
-            "backgroundColor": "#FFFFFF",
-            "display": "block",
-        },
-    )
+def _order_interfere(values):
+    priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
+    vals = _safe_unique(values)
+    ordered = [v for v in priority if v in vals]
+    ordered += sorted([v for v in vals if v not in ordered])
+    return ordered
 
 
-def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
+def _pick_col(df_: pd.DataFrame, candidates):
+    for c in candidates:
+        if c in df_.columns:
+            return c
+    return None
+
+
+raw = pd.read_csv(DATA_PATH)
+df = raw.copy()
+
+# Normalize likely columns used in the dashboard
+for c in df.columns:
+    if df[c].dtype == object:
+        df[c] = df[c].astype("string").str.strip()
+
+# Harmonize geographic columns if possible
+country_col = _pick_col(df, ["country", "Country"])
+if country_col is None:
+    df["country"] = "Unknown"
+else:
+    df["country"] = _ensure_str_series(df[country_col])
+
+region_col = _pick_col(df, ["region", "Region"])
+if region_col is None:
+    df["region"] = "Unknown"
+else:
+    df["region"] = _ensure_str_series(df[region_col])
+
+# Optional year handling
+if "year" in df.columns:
+    df["year"] = pd.to_numeric(df["year"], errors="coerce")
+
+# Required-ish columns with fallbacks
+fallbacks = {
+    "gender": "Unknown",
+    "age_bin": "Unknown",
+    "company_size": "Unknown",
+    "remote_work": "Unknown",
+    "treatment": "Unknown",
+    "work_interfere": "Unknown",
+    "benefits": "Unknown",
+    "seek_help": "Unknown",
+}
+for col, val in fallbacks.items():
+    if col not in df.columns:
+        df[col] = val
+    df[col] = _ensure_str_series(df[col])
+
+# Age numeric for boxplot when available
+age_num_col = _pick_col(df, ["Age", "age"])
+if age_num_col:
+    df["age_numeric"] = pd.to_numeric(df[age_num_col], errors="coerce")
+else:
+    df["age_numeric"] = np.nan
+
+# Remove unreasonable ages if present
+if "age_numeric" in df.columns:
+    df.loc[(df["age_numeric"] < 10) | (df["age_numeric"] > 100), "age_numeric"] = np.nan
+
+# Geo mapping coverage
+country_geo = px.data.gapminder()[["country", "iso_alpha"]].drop_duplicates()
+
+COLORS = {
+    "bg": "#F7F9FC",
+    "panel": "#FFFFFF",
+    "border": "#E6ECF4",
+    "text": "#1F2937",
+    "muted": "#667085",
+    "primary": "#2F6BFF",
+    "blue": "#4C78A8",
+    "teal": "#72B7B2",
+    "green": "#54A24B",
+    "orange": "#F58518",
+    "red": "#E45756",
+    "purple": "#9C89B8",
+}
+
+CARD_STYLE = {
+    "backgroundColor": COLORS["panel"],
+    "border": f"1px solid {COLORS['border']}",
+    "borderRadius": "16px",
+    "boxShadow": "0 4px 18px rgba(15, 23, 42, 0.06)",
+}
+
+
+def filtered_df(dff, year, regions, genders, age_bins, company_sizes, remote_work, linked_age, linked_country, linked_region):
     out = dff.copy()
 
-    if year:
-        out = out[out["year"] == int(year)]
-    if region:
-        out = out[out["region"].isin(region)]
+    if year and "year" in out.columns:
+        out = out[out["year"] == float(year)]
+    if regions:
+        out = out[out["region"].isin(regions)]
     if genders:
         out = out[out["gender"].isin(genders)]
     if age_bins:
@@ -190,699 +174,449 @@ def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work
     if remote_work:
         out = out[out["remote_work"].isin(remote_work)]
 
+    if linked_age:
+        out = out[out["age_bin"] == linked_age]
+    if linked_country:
+        out = out[out["country"] == linked_country]
+    if linked_region:
+        out = out[out["region"] == linked_region]
+
     return out
 
 
-def wrap_chart(title, subtitle, child):
-    return html.Div(
-        [
-            html.Div(
-                [
-                    html.Div(
-                        title,
-                        style={
-                            "fontSize": "22px",
-                            "fontWeight": "700",
-                            "color": COLORS["text"],
-                            "lineHeight": "1.2",
-                            "marginBottom": "6px",
-                        },
-                    ),
-                    html.Div(
-                        subtitle,
-                        style={
-                            "fontSize": "14px",
-                            "color": COLORS["muted"],
-                            "lineHeight": "1.5",
-                            "marginBottom": "14px",
-                        },
-                    ),
-                ],
-                style={"padding": "2px 2px 0 2px"},
-            ),
-            child,
-        ],
-        style={
-            **CARD_STYLE,
-            "padding": "18px 18px 14px 18px",
-            "height": "100%",
-        },
+def empty_fig(msg="No data for current filters"):
+    fig = go.Figure()
+    fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(size=16))
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    fig.update_layout(height=360, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor="white", plot_bgcolor="white")
+    return fig
+
+
+def style_fig(fig, height=340):
+    fig.update_layout(
+        height=height,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        margin=dict(l=24, r=18, t=54, b=28),
+        font=dict(color=COLORS["text"]),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     )
+    fig.update_xaxes(showgrid=False, linecolor="#D6DEEA")
+    fig.update_yaxes(gridcolor="#ECF1F7", linecolor="#D6DEEA")
+    return fig
 
 
-# -----------------------------
-# KPI cards
-# -----------------------------
-def kpi_cards(dff: pd.DataFrame):
+def pct_yes(series):
+    s = series.astype(str)
+    return round(100 * (s == "Yes").mean(), 1) if len(s) else 0.0
+
+
+def kpi_cards(dff):
     n = len(dff)
-
-    def pct(col, val="Yes"):
-        if n == 0 or col not in dff.columns:
-            return None
-        return (dff[col].astype(str).eq(val).mean()) * 100
-
-    def fmt(x):
-        return "N/A" if x is None else f"{x:.1f}%"
-
-    def one_kpi(title, value, accent="#2F6BFF"):
-        return dbc.Card(
-            dbc.CardBody(
-                [
-                    html.Div(
-                        title,
-                        style={
-                            "fontSize": "12px",
-                            "color": COLORS["muted"],
-                            "fontWeight": "600",
-                            "marginBottom": "8px",
-                        },
-                    ),
-                    html.Div(
-                        value,
-                        style={
-                            "fontSize": "30px",
-                            "fontWeight": "700",
-                            "color": COLORS["text"],
-                            "lineHeight": "1.1",
-                        },
-                    ),
-                    html.Div(
-                        style={
-                            "width": "42px",
-                            "height": "4px",
-                            "backgroundColor": accent,
-                            "borderRadius": "999px",
-                            "marginTop": "12px",
-                        },
-                    ),
-                ]
-            ),
-            style={
-                **CARD_STYLE,
-                "padding": "4px",
-                "height": "100%",
-            },
-        )
-
-    return dbc.Row(
-        [
-            dbc.Col(one_kpi("Sample Size", f"{n}", accent=COLORS["primary"]), md=3),
-            dbc.Col(one_kpi("Treatment Rate", fmt(pct("treatment")), accent=COLORS["chart_blue"]), md=3),
-            dbc.Col(one_kpi("Benefits Available", fmt(pct("benefits")), accent=COLORS["success"]), md=3),
-            dbc.Col(one_kpi("Family History", fmt(pct("family_history")), accent=COLORS["warning"]), md=3),
-        ],
-        className="g-3",
-    )
-
-
-# -----------------------------
-# Linked Altair dashboard
-# -----------------------------
-def linked_dashboard_chart(dff: pd.DataFrame, metric_mode="percent"):
-    if dff is None or len(dff) == 0:
-        return _no_data_chart("No data for current filters.")
-
-    required_cols = [
-        "age_bin",
-        "gender",
-        "treatment",
-        "work_interfere",
-        "benefits",
-        "seek_help",
+    vals = [
+        ("Sample Size", f"{n:,}"),
+        ("Treatment Rate", f"{pct_yes(dff['treatment']) if n else 0:.1f}%"),
+        ("Benefits Available", f"{pct_yes(dff['benefits']) if n else 0:.1f}%"),
+        ("Help-Seeking Climate", f"{pct_yes(dff['seek_help']) if n else 0:.1f}%"),
     ]
-    missing = [c for c in required_cols if c not in dff.columns]
-    if missing:
-        return _no_data_chart(f"Missing required columns: {', '.join(missing)}")
-
-    tmp = dff.copy()
-
-    for col in required_cols:
-        tmp[col] = _ensure_str_series(tmp[col])
-
-    age_order = _order_age_bin(tmp["age_bin"].unique())
-    interfere_order = _order_work_interfere(tmp["work_interfere"].unique())
-    yn_order = _order_yes_no_unknown(
-        pd.concat([tmp["benefits"], tmp["seek_help"]], axis=0).unique()
-    )
-
-    age_select = alt.selection_point(
-        fields=["age_bin"],
-        empty=True,
-        on="click",
-        clear="dblclick",
-        name="SelectAgeGroup",
-    )
-
-    agg1 = (
-        tmp.groupby(["age_bin", "gender"], dropna=False)
-        .agg(
-            n=("treatment", "size"),
-            treat_yes=("treatment", lambda x: (x == "Yes").sum()),
-        )
-        .reset_index()
-    )
-    agg1["rate"] = (agg1["treat_yes"] / agg1["n"]) * 100
-
-    if metric_mode == "count":
-        y_field_1 = "treat_yes:Q"
-        y_title_1 = "Treatment (Yes) count"
-        tooltip_1 = [
-            alt.Tooltip("age_bin:N", title="Age group"),
-            alt.Tooltip("gender:N", title="Gender"),
-            alt.Tooltip("treat_yes:Q", title="Treatment count"),
-            alt.Tooltip("n:Q", title="Respondents"),
-        ]
-    else:
-        y_field_1 = "rate:Q"
-        y_title_1 = "Treatment rate (%)"
-        tooltip_1 = [
-            alt.Tooltip("age_bin:N", title="Age group"),
-            alt.Tooltip("gender:N", title="Gender"),
-            alt.Tooltip("rate:Q", title="Treatment rate", format=".1f"),
-            alt.Tooltip("n:Q", title="Respondents"),
-        ]
-
-    c1 = (
-        alt.Chart(agg1)
-        .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
-        .encode(
-            x=alt.X(
-                "age_bin:N",
-                sort=age_order,
-                title="Age group",
-                axis=alt.Axis(labelAngle=0, labelPadding=8),
-            ),
-            xOffset=alt.XOffset("gender:N"),
-            y=alt.Y(y_field_1, title=y_title_1),
-            color=alt.Color(
-                "gender:N",
-                title="Gender",
-                scale=alt.Scale(
-                    range=["#4C78A8", "#F58518", "#E45756", "#72B7B2", "#54A24B"]
+    cols = []
+    for title, value in vals:
+        cols.append(
+            dbc.Col(
+                dbc.Card(
+                    dbc.CardBody([
+                        html.Div(title, style={"fontSize": "12px", "color": COLORS["muted"], "fontWeight": "600"}),
+                        html.Div(value, style={"fontSize": "30px", "fontWeight": "700", "marginTop": "8px"}),
+                    ]),
+                    style={**CARD_STYLE, "height": "100%"},
                 ),
-            ),
-            opacity=alt.condition(age_select, alt.value(1.0), alt.value(0.35)),
-            tooltip=tooltip_1,
-        )
-        .add_params(age_select)
-        .properties(
-            title="Treatment by age group",
-            width=320,
-            height=240,
-        )
-    )
-
-    filtered_base = alt.Chart(tmp).transform_filter(age_select)
-    treated_filtered = filtered_base.transform_filter(alt.datum.treatment == "Yes")
-
-    c2 = (
-        treated_filtered
-        .transform_aggregate(
-            count="count()",
-            groupby=["work_interfere"],
-        )
-        .transform_joinaggregate(total="sum(count)")
-        .transform_calculate(
-            pct="datum.total > 0 ? datum.count / datum.total * 100 : 0"
-        )
-        .mark_bar(
-            color="#4C78A8",
-            cornerRadiusTopLeft=4,
-            cornerRadiusTopRight=4,
-        )
-        .encode(
-            x=alt.X(
-                "work_interfere:N",
-                sort=interfere_order,
-                title="Work interference",
-                axis=alt.Axis(labelAngle=0, labelPadding=8),
-            ),
-            y=alt.Y(
-                "pct:Q" if metric_mode == "percent" else "count:Q",
-                title=("Percent" if metric_mode == "percent" else "Count"),
-            ),
-            tooltip=[
-                alt.Tooltip("work_interfere:N", title="Work interference"),
-                alt.Tooltip("count:Q", title="Count"),
-                alt.Tooltip("pct:Q", title="Percent", format=".1f"),
-            ],
-        )
-        .properties(
-            title="Work interference among treated respondents",
-            width=320,
-            height=240,
-        )
-    )
-
-    c3 = (
-        treated_filtered
-        .transform_aggregate(
-            count="count()",
-            groupby=["benefits"],
-        )
-        .transform_joinaggregate(total="sum(count)")
-        .transform_calculate(
-            pct="datum.total > 0 ? datum.count / datum.total * 100 : 0"
-        )
-        .mark_bar(
-            color="#54A24B",
-            cornerRadiusTopLeft=4,
-            cornerRadiusTopRight=4,
-        )
-        .encode(
-            x=alt.X(
-                "benefits:N",
-                sort=yn_order,
-                title="Benefits available",
-                axis=alt.Axis(labelAngle=0, labelPadding=8),
-            ),
-            y=alt.Y(
-                "pct:Q" if metric_mode == "percent" else "count:Q",
-                title=("Percent" if metric_mode == "percent" else "Count"),
-            ),
-            tooltip=[
-                alt.Tooltip("benefits:N", title="Benefits"),
-                alt.Tooltip("count:Q", title="Count"),
-                alt.Tooltip("pct:Q", title="Percent", format=".1f"),
-            ],
-        )
-        .properties(
-            title="Benefits support among treated respondents",
-            width=320,
-            height=240,
-        )
-    )
-
-    c4 = (
-        treated_filtered
-        .transform_aggregate(
-            count="count()",
-            groupby=["seek_help"],
-        )
-        .transform_joinaggregate(total="sum(count)")
-        .transform_calculate(
-            pct="datum.total > 0 ? datum.count / datum.total * 100 : 0"
-        )
-        .mark_bar(
-            color="#F4A261",
-            cornerRadiusTopLeft=4,
-            cornerRadiusTopRight=4,
-        )
-        .encode(
-            x=alt.X(
-                "seek_help:N",
-                sort=yn_order,
-                title="Seek-help climate",
-                axis=alt.Axis(labelAngle=0, labelPadding=8),
-            ),
-            y=alt.Y(
-                "pct:Q" if metric_mode == "percent" else "count:Q",
-                title=("Percent" if metric_mode == "percent" else "Count"),
-            ),
-            tooltip=[
-                alt.Tooltip("seek_help:N", title="Seek help"),
-                alt.Tooltip("count:Q", title="Count"),
-                alt.Tooltip("pct:Q", title="Percent", format=".1f"),
-            ],
-        )
-        .properties(
-            title="Help-seeking climate among treated respondents",
-            width=320,
-            height=240,
-        )
-    )
-
-    dashboard = (
-        alt.vconcat(
-            (c1 | c2),
-            (c3 | c4),
-            spacing=26,
-        )
-        .configure_title(
-            fontSize=15,
-            anchor="start",
-            color=COLORS["text"],
-            fontWeight="bold",
-            offset=8,
-        )
-        .configure_axis(
-            labelFontSize=11,
-            titleFontSize=12,
-            labelColor=COLORS["text"],
-            titleColor=COLORS["text"],
-            gridColor="#E9EEF5",
-            domainColor="#C9D4E5",
-            tickColor="#C9D4E5",
-        )
-        .configure_legend(
-            labelFontSize=11,
-            titleFontSize=12,
-            labelColor=COLORS["text"],
-            titleColor=COLORS["text"],
-            orient="top",
-            symbolType="square",
-        )
-        .configure_view(stroke=None)
-        .properties(
-            title=alt.TitleParams(
-                text="Linked views for workplace mental health exploration",
-                subtitle=[
-                    "Click an age group in the first chart to update the remaining panels. Double-click to clear the selection."
-                ],
-                anchor="start",
-                fontSize=17,
-                subtitleFontSize=12,
-                color=COLORS["text"],
-                subtitleColor=COLORS["muted"],
-                offset=12,
+                md=3,
             )
         )
+    return dbc.Row(cols, className="g-3")
+
+
+def fig_treatment_age_gender(dff):
+    if dff.empty:
+        return empty_fig()
+    age_order = _order_age_bin(dff["age_bin"])
+    agg = dff.groupby(["age_bin", "gender"], dropna=False).agg(n=("treatment", "size"), yes=("treatment", lambda x: (x.astype(str) == "Yes").sum())).reset_index()
+    agg["rate"] = np.where(agg["n"] > 0, agg["yes"] / agg["n"] * 100, 0)
+    fig = px.bar(
+        agg,
+        x="age_bin",
+        y="rate",
+        color="gender",
+        barmode="group",
+        category_orders={"age_bin": age_order},
+        custom_data=["age_bin"],
+        labels={"rate": "Treatment rate (%)", "age_bin": "Age group"},
+    )
+    fig.update_traces(hovertemplate="Age: %{x}<br>Rate: %{y:.1f}%<extra></extra>")
+    return style_fig(fig)
+
+
+def fig_interference(dff):
+    if dff.empty:
+        return empty_fig()
+    order = _order_interfere(dff["work_interfere"])
+    sub = dff[dff["treatment"].astype(str) == "Yes"]
+    agg = sub.groupby("work_interfere", dropna=False).size().reset_index(name="count")
+    total = agg["count"].sum()
+    agg["pct"] = np.where(total > 0, agg["count"] / total * 100, 0)
+    fig = px.bar(
+        agg,
+        x="work_interfere",
+        y="pct",
+        category_orders={"work_interfere": order},
+        labels={"pct": "Percent", "work_interfere": "Work interference"},
+    )
+    return style_fig(fig)
+
+
+def fig_support_donut(dff):
+    if dff.empty:
+        return empty_fig()
+    agg = dff.groupby("benefits", dropna=False).size().reset_index(name="count")
+    fig = px.pie(agg, names="benefits", values="count", hole=0.58)
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    return style_fig(fig)
+
+
+def fig_region_support_heatmap(dff):
+    if dff.empty:
+        return empty_fig()
+    metrics = ["treatment", "benefits", "seek_help"]
+    rows = []
+    for region, sub in dff.groupby("region", dropna=False):
+        for m in metrics:
+            rows.append({"region": region, "metric": m, "rate": pct_yes(sub[m])})
+    heat = pd.DataFrame(rows)
+    metric_name = {"treatment": "Treatment", "benefits": "Benefits", "seek_help": "Seek help"}
+    heat["metric"] = heat["metric"].map(metric_name)
+    fig = px.imshow(
+        heat.pivot(index="region", columns="metric", values="rate"),
+        text_auto=".1f",
+        aspect="auto",
+        color_continuous_scale="Teal",
+        labels=dict(color="Rate (%)"),
+    )
+    return style_fig(fig, height=390)
+
+
+def fig_year_trend(dff):
+    if dff.empty or "year" not in dff.columns or dff["year"].dropna().nunique() == 0:
+        return empty_fig("Year trend unavailable")
+    agg = dff.groupby("year", dropna=False).agg(n=("treatment", "size"), rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100)).reset_index()
+    fig = px.line(agg, x="year", y="rate", markers=True, labels={"rate": "Treatment rate (%)"})
+    return style_fig(fig)
+
+
+def fig_gender_treemap(dff):
+    if dff.empty:
+        return empty_fig()
+    agg = dff.groupby(["gender", "age_bin"], dropna=False).size().reset_index(name="count")
+    fig = px.treemap(agg, path=[px.Constant("All respondents"), "gender", "age_bin"], values="count")
+    return style_fig(fig, height=400)
+
+
+def fig_age_box(dff):
+    if dff.empty or dff["age_numeric"].dropna().empty:
+        return empty_fig("Numeric age unavailable")
+    fig = px.box(dff, x="gender", y="age_numeric", color="gender", labels={"age_numeric": "Age"})
+    return style_fig(fig)
+
+
+def fig_support_scatter(dff):
+    if dff.empty:
+        return empty_fig()
+    agg = dff.groupby(["region", "country"], dropna=False).agg(
+        n=("treatment", "size"),
+        treatment_rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100),
+        benefits_rate=("benefits", lambda x: (x.astype(str) == "Yes").mean() * 100),
+        seek_help_rate=("seek_help", lambda x: (x.astype(str) == "Yes").mean() * 100),
+    ).reset_index()
+    fig = px.scatter(
+        agg,
+        x="benefits_rate",
+        y="treatment_rate",
+        size="n",
+        color="region",
+        hover_name="country",
+        labels={"benefits_rate": "Benefits rate (%)", "treatment_rate": "Treatment rate (%)"},
+    )
+    return style_fig(fig)
+
+
+def fig_stacked_support(dff):
+    if dff.empty:
+        return empty_fig()
+    order = _order_yes_no_unknown(pd.concat([dff["benefits"], dff["seek_help"]]))
+    long = pd.concat([
+        dff[["benefits"]].rename(columns={"benefits": "response"}).assign(metric="Benefits"),
+        dff[["seek_help"]].rename(columns={"seek_help": "response"}).assign(metric="Seek help"),
+    ], ignore_index=True)
+    agg = long.groupby(["metric", "response"], dropna=False).size().reset_index(name="count")
+    fig = px.bar(agg, x="metric", y="count", color="response", barmode="stack", category_orders={"response": order})
+    return style_fig(fig)
+
+
+def fig_geo_map(dff):
+    if dff.empty:
+        return empty_fig()
+    agg = dff.groupby("country", dropna=False).agg(n=("treatment", "size"), treatment_rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100)).reset_index()
+    geo = agg.merge(country_geo, on="country", how="left")
+    geo["iso_alpha"] = geo["iso_alpha"].fillna("UNK")
+    fig = px.choropleth(
+        geo[geo["iso_alpha"] != "UNK"],
+        locations="iso_alpha",
+        color="treatment_rate",
+        hover_name="country",
+        custom_data=["country"],
+        color_continuous_scale="Blues",
+        labels={"treatment_rate": "Treatment rate (%)"},
+    )
+    fig.update_geos(showframe=False, showcoastlines=True, coastlinecolor="#D4DCE8")
+    return style_fig(fig, height=420)
+
+
+def fig_remote_donut(dff):
+    if dff.empty:
+        return empty_fig()
+    agg = dff.groupby("remote_work", dropna=False).size().reset_index(name="count")
+    fig = px.pie(agg, names="remote_work", values="count", hole=0.55)
+    fig.update_traces(textinfo="percent+label")
+    return style_fig(fig)
+
+
+def current_selection_badges(age, country, region):
+    vals = []
+    if age:
+        vals.append(("Age", age))
+    if country:
+        vals.append(("Country", country))
+    if region:
+        vals.append(("Region", region))
+    if not vals:
+        return dbc.Alert("No linked selection active. Click charts to filter related views.", color="light", style={"borderRadius": "12px", "marginBottom": "12px"})
+
+    return html.Div(
+        [
+            dbc.Badge(f"{k}: {v}", color="primary", pill=True, className="me-2", style={"fontSize": "0.9rem", "padding": "8px 12px"})
+            for k, v in vals
+        ],
+        style={"marginBottom": "12px"},
     )
 
-    return dashboard
 
-
-# -----------------------------
-# App init
-# -----------------------------
-app = Dash(
-    __name__,
-    external_stylesheets=[dbc.themes.BOOTSTRAP],
-    title="Workplace Mental Health Dashboard",
-)
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], title="Mental Health Dashboard")
 server = app.server
 
-# -----------------------------
-# Precompute dropdown values
-# -----------------------------
-years = sorted(df["year"].dropna().unique()) if "year" in df.columns else []
-regions = sorted(df["region"].dropna().unique()) if "region" in df.columns else []
-genders = sorted(df["gender"].dropna().unique()) if "gender" in df.columns else []
-age_bins = _order_age_bin(df["age_bin"].dropna().unique()) if "age_bin" in df.columns else []
-company_sizes = (
-    _order_company_size(df["company_size"].dropna().unique())
-    if "company_size" in df.columns
-    else []
-)
-remote_vals = (
-    sorted(df["remote_work"].dropna().unique()) if "remote_work" in df.columns else []
-)
+years = sorted(df["year"].dropna().unique().tolist()) if "year" in df.columns else []
+regions = sorted(_safe_unique(df["region"]))
+genders = sorted(_safe_unique(df["gender"]))
+age_bins = _order_age_bin(df["age_bin"])
+company_sizes = _order_company_size(df["company_size"])
+remote_vals = sorted(_safe_unique(df["remote_work"]))
 
-# -----------------------------
-# Sidebar
-# -----------------------------
-filters = dbc.Card(
-    dbc.CardBody(
-        [
-            html.Div("Filters", style=SECTION_TITLE_STYLE),
-
-            html.Label("Year", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": str(y), "value": y} for y in years],
-                value=years[0] if years else None,
-                id="f-year",
-                clearable=False,
-                placeholder="Select year",
-            ),
-
-            html.Div(style={"height": "16px"}),
-
-            html.Label("Region", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": r, "value": r} for r in regions],
-                value=["North America"] if "North America" in regions else (regions[:1] if regions else []),
-                id="f-region",
-                multi=True,
-                placeholder="Select region",
-            ),
-
-            html.Hr(style={"margin": "22px 0", "borderColor": COLORS["border"]}),
-
-            html.Label("Gender", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": g, "value": g} for g in genders],
-                value=genders,
-                id="f-gender",
-                multi=True,
-                placeholder="Select gender",
-            ),
-
-            html.Div(style={"height": "16px"}),
-
-            html.Label("Age bin", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": a, "value": a} for a in age_bins],
-                value=age_bins,
-                id="f-agebin",
-                multi=True,
-                placeholder="Select age group",
-            ),
-
-            html.Div(style={"height": "16px"}),
-
-            html.Label("Company size", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": c, "value": c} for c in company_sizes],
-                value=company_sizes,
-                id="f-company",
-                multi=True,
-                placeholder="Select company size",
-            ),
-
-            html.Div(style={"height": "16px"}),
-
-            html.Label("Remote work", style=LABEL_STYLE),
-            dcc.Dropdown(
-                options=[{"label": r, "value": r} for r in remote_vals],
-                value=remote_vals,
-                id="f-remote",
-                multi=True,
-                placeholder="Select remote work status",
-            ),
-
-            html.Div(style={"height": "16px"}),
-
-            html.Label("Chart metric", style=LABEL_STYLE),
-            dcc.RadioItems(
-                id="f-metric",
-                options=[
-                    {"label": " Percent", "value": "percent"},
-                    {"label": " Count", "value": "count"},
-                ],
-                value="percent",
-                inline=True,
-                labelStyle={
-                    "marginRight": "16px",
-                    "fontSize": "13px",
-                    "color": COLORS["text"],
-                },
-                inputStyle={"marginRight": "6px"},
-            ),
-        ],
-        style={"padding": "22px"},
-    ),
-    style={
-        **CARD_STYLE,
-        "height": "100%",
-    },
+hero = dbc.Card(
+    dbc.CardBody([
+        html.Div("Executive dashboard", style={"fontSize": "13px", "fontWeight": "700", "color": COLORS["primary"], "textTransform": "uppercase", "letterSpacing": "0.08em"}),
+        html.H2("Workplace Mental Health Intelligence Hub", style={"marginTop": "8px", "marginBottom": "8px"}),
+        html.P("Commercial-style analytics dashboard with multi-tab navigation, cross-chart interaction, geographic drilldown, and business-facing support metrics.", style={"color": COLORS["muted"], "marginBottom": 0}),
+    ]),
+    style={**CARD_STYLE, "marginBottom": "14px", "background": "linear-gradient(135deg, #FFFFFF 0%, #F5F8FF 100%)"},
 )
 
-# -----------------------------
-# Notes / Legend
-# -----------------------------
-legend = dbc.Card(
-    dbc.CardBody(
-        [
-            html.Div("Legend & Notes", style=SECTION_TITLE_STYLE),
+sidebar = dbc.Card(
+    dbc.CardBody([
+        html.Div("Global filters", style={"fontWeight": "700", "fontSize": "15px", "marginBottom": "14px"}),
+        html.Label("Year", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-year", options=[{"label": str(int(y)), "value": int(y)} for y in years], value=int(years[0]) if years else None, clearable=False),
+        html.Div(style={"height": "12px"}),
+        html.Label("Region", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-region", options=[{"label": x, "value": x} for x in regions], value=regions, multi=True),
+        html.Div(style={"height": "12px"}),
+        html.Label("Gender", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-gender", options=[{"label": x, "value": x} for x in genders], value=genders, multi=True),
+        html.Div(style={"height": "12px"}),
+        html.Label("Age group", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-agebin", options=[{"label": x, "value": x} for x in age_bins], value=age_bins, multi=True),
+        html.Div(style={"height": "12px"}),
+        html.Label("Company size", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-company", options=[{"label": x, "value": x} for x in company_sizes], value=company_sizes, multi=True),
+        html.Div(style={"height": "12px"}),
+        html.Label("Remote work", style={"fontWeight": "600", "fontSize": "13px"}),
+        dcc.Dropdown(id="f-remote", options=[{"label": x, "value": x} for x in remote_vals], value=remote_vals, multi=True),
+        html.Hr(),
+        dbc.Button("Reset linked selection", id="reset-linked", color="primary", className="w-100"),
+        html.Div(style={"height": "10px"}),
+        html.Div(id="selection-state"),
+        dcc.Store(id="store-age"),
+        dcc.Store(id="store-country"),
+        dcc.Store(id="store-region"),
+    ]),
+    style={**CARD_STYLE, "height": "100%"},
+)
 
-            html.P(
-                "All charts update dynamically based on the filters selected on the left.",
-                style={
-                    "color": COLORS["muted"],
-                    "fontSize": "14px",
-                    "marginBottom": "16px",
-                },
-            ),
 
-            dbc.Alert(
-                "Linked interaction: click an age group in the first chart to filter the remaining views. Double-click to reset.",
-                color="light",
-                style={
-                    "marginBottom": "14px",
-                    "borderRadius": "12px",
-                    "fontSize": "13px",
-                    "border": f"1px solid {COLORS['border']}",
-                    "color": COLORS["muted"],
-                    "backgroundColor": "#FAFBFD",
-                },
-            ),
-
-            html.Hr(style={"borderColor": COLORS["border"]}),
-
+def graph_card(title, graph_id, height=340):
+    return dbc.Card(
+        dbc.CardBody([
+            html.Div(title, style={"fontWeight": "700", "fontSize": "16px", "marginBottom": "14px", "lineHeight": "1.35", "color": COLORS["text"]}),
             html.Div(
-                "Definitions",
-                style={
-                    "fontSize": "14px",
-                    "fontWeight": "700",
-                    "color": COLORS["text"],
-                    "marginBottom": "8px",
-                },
+                dcc.Graph(id=graph_id, config={"displayModeBar": False}, style={"height": f"{height}px"}),
+                style={"marginTop": "6px"},
             ),
-            html.Ul(
-                [
-                    html.Li("treatment: whether the respondent has sought treatment for mental health."),
-                    html.Li("work_interfere: how often mental health interferes with work."),
-                    html.Li("benefits: whether the employer provides mental health benefits."),
-                    html.Li("seek_help: whether the workplace encourages help-seeking."),
-                ],
-                style={
-                    "paddingLeft": "18px",
-                    "color": COLORS["text"],
-                    "fontSize": "14px",
-                },
-            ),
+        ], style={"padding": "20px 20px 18px 20px"}),
+        style={**CARD_STYLE, "height": "100%"},
+    )
 
-            html.Hr(style={"borderColor": COLORS["border"]}),
 
-            html.Div(
-                "Encodings",
-                style={
-                    "fontSize": "14px",
-                    "fontWeight": "700",
-                    "color": COLORS["text"],
-                    "marginBottom": "8px",
-                },
-            ),
-            html.Ul(
-                [
-                    html.Li("Top-left: grouped bars compare treatment outcomes by age group and gender."),
-                    html.Li("Top-right: bars summarize work interference among treated respondents."),
-                    html.Li("Bottom-left: bars summarize benefits support among treated respondents."),
-                    html.Li("Bottom-right: bars summarize help-seeking support among treated respondents."),
-                ],
-                style={
-                    "paddingLeft": "18px",
-                    "color": COLORS["text"],
-                    "fontSize": "14px",
-                },
-            ),
-        ],
-        style={"padding": "22px"},
-    ),
-    style={
-        **CARD_STYLE,
-        "height": "100%",
-    },
+overview_tab = html.Div([
+    html.Div(id="kpi-row", style={"marginBottom": "14px"}),
+    dbc.Row([
+        dbc.Col(graph_card("Linked selection source", "g-age-gender", 360), md=6),
+        dbc.Col(graph_card("Support composition", "g-support-donut", 360), md=6),
+    ], className="g-3 mb-3"),
+    dbc.Row([
+        dbc.Col(graph_card("Interference", "g-interference", 360), md=6),
+        dbc.Col(graph_card("Regional heatmap", "g-heatmap", 390), md=6),
+    ], className="g-3"),
+])
+
+demographics_tab = html.Div([
+    dbc.Row([
+        dbc.Col(graph_card("Demographic treemap", "g-treemap", 420), md=6),
+        dbc.Col(graph_card("Age distribution", "g-age-box", 420), md=6),
+    ], className="g-3 mb-3"),
+    dbc.Row([
+        dbc.Col(graph_card("Trend over time", "g-year-trend", 360), md=12),
+    ], className="g-3"),
+])
+
+support_tab = html.Div([
+    dbc.Row([
+        dbc.Col(graph_card("Treatment vs benefits", "g-support-scatter", 380), md=7),
+        dbc.Col(graph_card("Support stack", "g-support-stack", 380), md=5),
+    ], className="g-3"),
+])
+
+geo_tab = html.Div([
+    dbc.Row([
+        dbc.Col(graph_card("Country map", "g-geo-map", 430), md=8),
+        dbc.Col(graph_card("Remote work", "g-remote-donut", 430), md=4),
+    ], className="g-3"),
+])
+
+main_tabs = dbc.Card(
+    dbc.CardBody([
+        dbc.Tabs([
+            dbc.Tab(overview_tab, label="Overview"),
+            dbc.Tab(demographics_tab, label="Demographics"),
+            dbc.Tab(support_tab, label="Support Systems"),
+            dbc.Tab(geo_tab, label="Geography & Work Style"),
+        ])
+    ]),
+    style={**CARD_STYLE, "height": "100%"},
 )
 
-# -----------------------------
-# Layout
-# -----------------------------
 app.layout = dbc.Container(
     fluid=True,
-    style={
-        "height": "100vh",
-        "overflow": "hidden",
-        "backgroundColor": COLORS["bg"],
-        "padding": "18px 18px 16px 18px",
-    },
+    style={"backgroundColor": COLORS["bg"], "minHeight": "100vh", "padding": "18px"},
     children=[
-        html.Div(
-            [
-                html.Div(
-                    [
-                        html.H2("Workplace Mental Health Dashboard", style=PAGE_TITLE_STYLE),
-                        html.P(
-                            "Explore treatment rates and workplace support factors across demographic and organizational groups.",
-                            style=PAGE_SUBTITLE_STYLE,
-                        ),
-                    ],
-                    style={"flex": "1"},
-                ),
-            ],
-            style={
-                "display": "flex",
-                "alignItems": "center",
-                "justifyContent": "space-between",
-                "marginBottom": "14px",
-            },
-        ),
-
-        dbc.Row(
-            className="g-3",
-            style={"height": "calc(100vh - 100px)"},
-            children=[
-                dbc.Col(
-                    html.Div(filters, style={"height": "100%", "overflowY": "auto"}),
-                    width=3,
-                    style={"height": "100%"},
-                ),
-
-                dbc.Col(
-                    html.Div(
-                        [
-                            html.Div(id="kpi-area", style={"flex": "0 0 auto", "marginBottom": "14px"}),
-                            html.Div(
-                                id="linked-chart-area",
-                                style={
-                                    "flex": "1 1 auto",
-                                    "minHeight": "0",
-                                    "overflowY": "auto",
-                                    "paddingRight": "2px",
-                                },
-                            ),
-                        ],
-                        style={
-                            "height": "100%",
-                            "display": "flex",
-                            "flexDirection": "column",
-                            "minHeight": "0",
-                        },
-                    ),
-                    width=6,
-                    style={"height": "100%"},
-                ),
-
-                dbc.Col(
-                    html.Div(legend, style={"height": "100%", "overflowY": "auto"}),
-                    width=3,
-                    style={"height": "100%"},
-                ),
-            ],
-        ),
+        hero,
+        dbc.Row([
+            dbc.Col(sidebar, md=3),
+            dbc.Col(main_tabs, md=9),
+        ], className="g-3"),
     ],
 )
 
-# -----------------------------
-# Callback
-# -----------------------------
+
 @app.callback(
-    Output("kpi-area", "children"),
-    Output("linked-chart-area", "children"),
+    Output("store-age", "data"),
+    Output("store-country", "data"),
+    Output("store-region", "data"),
+    Input("g-age-gender", "clickData"),
+    Input("g-geo-map", "clickData"),
+    Input("g-heatmap", "clickData"),
+    Input("reset-linked", "n_clicks"),
+    State("store-age", "data"),
+    State("store-country", "data"),
+    State("store-region", "data"),
+    prevent_initial_call=True,
+)
+def update_linked_filters(age_click, geo_click, heat_click, reset_clicks, current_age, current_country, current_region):
+    trig = callback_context.triggered_id
+    if trig == "reset-linked":
+        return None, None, None
+
+    if trig == "g-age-gender" and age_click:
+        pt = age_click["points"][0]
+        age_val = (pt.get("customdata") or [pt.get("x")])[0]
+        return (None if current_age == age_val else age_val), current_country, current_region
+
+    if trig == "g-geo-map" and geo_click:
+        pt = geo_click["points"][0]
+        country_val = (pt.get("customdata") or [pt.get("hovertext")])[0]
+        return current_age, (None if current_country == country_val else country_val), current_region
+
+    if trig == "g-heatmap" and heat_click:
+        pt = heat_click["points"][0]
+        region_val = pt.get("y")
+        return current_age, current_country, (None if current_region == region_val else region_val)
+
+    return current_age, current_country, current_region
+
+
+@app.callback(
+    Output("selection-state", "children"),
+    Output("kpi-row", "children"),
+    Output("g-age-gender", "figure"),
+    Output("g-support-donut", "figure"),
+    Output("g-interference", "figure"),
+    Output("g-heatmap", "figure"),
+    Output("g-treemap", "figure"),
+    Output("g-age-box", "figure"),
+    Output("g-year-trend", "figure"),
+    Output("g-support-scatter", "figure"),
+    Output("g-support-stack", "figure"),
+    Output("g-geo-map", "figure"),
+    Output("g-remote-donut", "figure"),
     Input("f-year", "value"),
     Input("f-region", "value"),
     Input("f-gender", "value"),
     Input("f-agebin", "value"),
     Input("f-company", "value"),
     Input("f-remote", "value"),
-    Input("f-metric", "value"),
+    Input("store-age", "data"),
+    Input("store-country", "data"),
+    Input("store-region", "data"),
 )
-def update(year, region, gender, agebin, company, remote, metric_mode):
+def update_dashboard(year, regions_v, genders_v, age_bins_v, company_sizes_v, remote_v, linked_age, linked_country, linked_region):
     try:
-        dff = filtered_df(df, year, region, gender, agebin, company, remote)
-
-        linked = wrap_chart(
-            "Interactive dashboard",
-            "Filter the data using the controls on the left. Then select an age group in the first chart to update the other panels.",
-            as_iframe(linked_dashboard_chart(dff, metric_mode=metric_mode), height=700),
+        dff = filtered_df(df, year, regions_v, genders_v, age_bins_v, company_sizes_v, remote_v, linked_age, linked_country, linked_region)
+        return (
+            current_selection_badges(linked_age, linked_country, linked_region),
+            kpi_cards(dff),
+            fig_treatment_age_gender(dff),
+            fig_support_donut(dff),
+            fig_interference(dff),
+            fig_region_support_heatmap(dff),
+            fig_gender_treemap(dff),
+            fig_age_box(dff),
+            fig_year_trend(dff),
+            fig_support_scatter(dff),
+            fig_stacked_support(dff),
+            fig_geo_map(dff),
+            fig_remote_donut(dff),
         )
-
-        return kpi_cards(dff), linked
-
     except Exception as e:
-        print("CALLBACK ERROR:", repr(e))
         traceback.print_exc()
-        return html.Div(f"Callback error: {e}"), None
+        err = empty_fig(f"Callback error: {e}")
+        return current_selection_badges(linked_age, linked_country, linked_region), html.Div(), err, err, err, err, err, err, err, err, err, err, err
 
 
 if __name__ == "__main__":
