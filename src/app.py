@@ -1,12 +1,12 @@
-from pathlib import Path
-import traceback
 
-import numpy as np
+from pathlib import Path
 import pandas as pd
+import numpy as np
+
+from dash import Dash, html, dcc, Input, Output, State, callback_context
+import dash_bootstrap_components as dbc
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import Dash, dcc, html, Input, Output, State, callback_context
-import dash_bootstrap_components as dbc
 
 # -----------------------------
 # Paths / data
@@ -16,34 +16,72 @@ PROJECT_ROOT = BASE_DIR.parent
 DATA_PATH = PROJECT_ROOT / "data" / "processed" / "cleaned.csv"
 
 if not DATA_PATH.exists():
-    raise FileNotFoundError(
-        f"Missing data file: {DATA_PATH}. Please make sure cleaned.csv is in data/processed/."
-    )
+    raise FileNotFoundError(f"Missing data file: {DATA_PATH}")
 
+df = pd.read_csv(DATA_PATH)
 
-def _safe_unique(values):
-    return list(pd.Series(list(values), dtype="object").dropna().drop_duplicates())
+# -----------------------------
+# Theme
+# -----------------------------
+COLORS = {
+    "bg": "#F7F9FC",
+    "panel": "#FFFFFF",
+    "border": "#E5EAF2",
+    "text": "#1F2937",
+    "muted": "#6B7280",
+    "primary": "#2F6BFF",
+    "primary_soft": "#EEF4FF",
+    "shadow": "0 4px 16px rgba(15, 23, 42, 0.06)",
+    "success": "#59A14F",
+    "warning": "#F4A261",
+    "blue": "#636EFA",
+    "red": "#EF553B",
+    "green": "#00CC96",
+    "purple": "#AB63FA",
+    "teal": "#19D3F3",
+}
 
+GENDER_COLORS = {
+    "Female": COLORS["blue"],
+    "Male": COLORS["red"],
+    "Non-binary / Other": COLORS["green"],
+}
 
-def _ensure_str_series(s: pd.Series) -> pd.Series:
+CARD_STYLE = {
+    "backgroundColor": COLORS["panel"],
+    "border": f"1px solid {COLORS['border']}",
+    "borderRadius": "18px",
+    "boxShadow": COLORS["shadow"],
+    "height": "100%",
+}
+
+GRAPH_CONFIG = {"displayModeBar": False, "responsive": True}
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def stable_unique(values):
+    return list(pd.Series(list(values)).dropna().astype(str).drop_duplicates())
+
+def ensure_str(s):
     return s.astype("string").fillna("<missing>")
 
+def order_yes_no_unknown(values):
+    priority = ["Yes", "No", "Don't know", "Not sure", "<missing>"]
+    vals = stable_unique(values)
+    ordered = [v for v in priority if v in vals]
+    tail = sorted([v for v in vals if v not in ordered])
+    return ordered + tail
 
-def _order_age_bin(values):
-    vals = _safe_unique(values)
+def order_work_interfere(values):
+    priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
+    vals = stable_unique(values)
+    ordered = [v for v in priority if v in vals]
+    tail = sorted([v for v in vals if v not in ordered])
+    return ordered + tail
 
-    def key(v):
-        s = str(v).strip()
-        try:
-            return int(s.split("-")[0].replace("+", ""))
-        except Exception:
-            return 10**9
-
-    return sorted(vals, key=key)
-
-
-def _order_company_size(values):
-    vals = _safe_unique(values)
+def order_age_bin(values):
+    vals = stable_unique(values)
 
     def key(v):
         s = str(v).strip()
@@ -56,115 +94,27 @@ def _order_company_size(values):
 
     return sorted(vals, key=key)
 
+def order_company_size(values):
+    vals = stable_unique(values)
 
-def _order_yes_no_unknown(values):
-    priority = ["Yes", "No", "Don't know", "Not sure", "Maybe", "<missing>"]
-    vals = _safe_unique(values)
-    ordered = [v for v in priority if v in vals]
-    ordered += sorted([v for v in vals if v not in ordered])
-    return ordered
+    def key(v):
+        s = str(v).strip()
+        try:
+            if "+" in s:
+                return int(s.replace("+", ""))
+            return int(s.split("-")[0])
+        except Exception:
+            return 10**9
 
+    return sorted(vals, key=key)
 
-def _order_interfere(values):
-    priority = ["Never", "Rarely", "Sometimes", "Often", "Don't know", "<missing>"]
-    vals = _safe_unique(values)
-    ordered = [v for v in priority if v in vals]
-    ordered += sorted([v for v in vals if v not in ordered])
-    return ordered
-
-
-def _pick_col(df_: pd.DataFrame, candidates):
-    for c in candidates:
-        if c in df_.columns:
-            return c
-    return None
-
-
-raw = pd.read_csv(DATA_PATH)
-df = raw.copy()
-
-# Normalize likely columns used in the dashboard
-for c in df.columns:
-    if df[c].dtype == object:
-        df[c] = df[c].astype("string").str.strip()
-
-# Harmonize geographic columns if possible
-country_col = _pick_col(df, ["country", "Country"])
-if country_col is None:
-    df["country"] = "Unknown"
-else:
-    df["country"] = _ensure_str_series(df[country_col])
-
-region_col = _pick_col(df, ["region", "Region"])
-if region_col is None:
-    df["region"] = "Unknown"
-else:
-    df["region"] = _ensure_str_series(df[region_col])
-
-# Optional year handling
-if "year" in df.columns:
-    df["year"] = pd.to_numeric(df["year"], errors="coerce")
-
-# Required-ish columns with fallbacks
-fallbacks = {
-    "gender": "Unknown",
-    "age_bin": "Unknown",
-    "company_size": "Unknown",
-    "remote_work": "Unknown",
-    "treatment": "Unknown",
-    "work_interfere": "Unknown",
-    "benefits": "Unknown",
-    "seek_help": "Unknown",
-}
-for col, val in fallbacks.items():
-    if col not in df.columns:
-        df[col] = val
-    df[col] = _ensure_str_series(df[col])
-
-# Age numeric for boxplot when available
-age_num_col = _pick_col(df, ["Age", "age"])
-if age_num_col:
-    df["age_numeric"] = pd.to_numeric(df[age_num_col], errors="coerce")
-else:
-    df["age_numeric"] = np.nan
-
-# Remove unreasonable ages if present
-if "age_numeric" in df.columns:
-    df.loc[(df["age_numeric"] < 10) | (df["age_numeric"] > 100), "age_numeric"] = np.nan
-
-# Geo mapping coverage
-country_geo = px.data.gapminder()[["country", "iso_alpha"]].drop_duplicates()
-
-COLORS = {
-    "bg": "#F7F9FC",
-    "panel": "#FFFFFF",
-    "border": "#E6ECF4",
-    "text": "#1F2937",
-    "muted": "#667085",
-    "primary": "#2F6BFF",
-    "blue": "#4C78A8",
-    "teal": "#72B7B2",
-    "green": "#54A24B",
-    "orange": "#F58518",
-    "red": "#E45756",
-    "purple": "#9C89B8",
-}
-
-CARD_STYLE = {
-    "backgroundColor": COLORS["panel"],
-    "border": f"1px solid {COLORS['border']}",
-    "borderRadius": "16px",
-    "boxShadow": "0 4px 18px rgba(15, 23, 42, 0.06)",
-}
-
-
-def filtered_df(dff, year, regions, genders, age_bins, company_sizes, remote_work, linked_age, linked_country, linked_region):
+def filtered_df(dff, year, region, genders, age_bins, company_sizes, remote_work):
     out = dff.copy()
 
-    if year and "year" in out.columns:
-        out = out[out["year"] == float(year)]
-    if regions:
-        out = out[out["region"].isin(regions)]
+    if year:
+        out = out[out["year"] == int(year)]
+    if region:
+        out = out[out["region"].isin(region)]
     if genders:
         out = out[out["gender"].isin(genders)]
     if age_bins:
@@ -174,450 +124,925 @@ def filtered_df(dff, year, regions, genders, age_bins, company_sizes, remote_wor
     if remote_work:
         out = out[out["remote_work"].isin(remote_work)]
 
-    if linked_age:
-        out = out[out["age_bin"] == linked_age]
-    if linked_country:
-        out = out[out["country"] == linked_country]
-    if linked_region:
-        out = out[out["region"] == linked_region]
+    return out
+
+def apply_linked_filters(dff, selected_age, selected_country, selected_region):
+    out = dff.copy()
+
+    if selected_age:
+        out = out[out["age_bin"].astype(str) == str(selected_age)]
+    if selected_country and "country" in out.columns:
+        out = out[out["country"].astype(str) == str(selected_country)]
+    if selected_region and "region" in out.columns:
+        out = out[out["region"].astype(str) == str(selected_region)]
 
     return out
 
-
-def empty_fig(msg="No data for current filters"):
+def make_empty_figure(msg="No data for current filters."):
     fig = go.Figure()
-    fig.add_annotation(text=msg, x=0.5, y=0.5, xref="paper", yref="paper", showarrow=False, font=dict(size=16))
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-    fig.update_layout(height=360, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor="white", plot_bgcolor="white")
-    return fig
-
-
-def style_fig(fig, height=340):
+    fig.add_annotation(
+        text=msg,
+        x=0.5,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        showarrow=False,
+        font=dict(size=15, color=COLORS["muted"]),
+    )
     fig.update_layout(
-        height=height,
+        template="plotly_white",
+        margin=dict(l=20, r=20, t=40, b=30),
         paper_bgcolor="white",
         plot_bgcolor="white",
-        margin=dict(l=24, r=18, t=54, b=28),
-        font=dict(color=COLORS["text"]),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
     )
-    fig.update_xaxes(showgrid=False, linecolor="#D6DEEA")
-    fig.update_yaxes(gridcolor="#ECF1F7", linecolor="#D6DEEA")
     return fig
 
-
-def pct_yes(series):
-    s = series.astype(str)
-    return round(100 * (s == "Yes").mean(), 1) if len(s) else 0.0
-
-
-def kpi_cards(dff):
-    n = len(dff)
-    vals = [
-        ("Sample Size", f"{n:,}"),
-        ("Treatment Rate", f"{pct_yes(dff['treatment']) if n else 0:.1f}%"),
-        ("Benefits Available", f"{pct_yes(dff['benefits']) if n else 0:.1f}%"),
-        ("Help-Seeking Climate", f"{pct_yes(dff['seek_help']) if n else 0:.1f}%"),
-    ]
-    cols = []
-    for title, value in vals:
-        cols.append(
-            dbc.Col(
-                dbc.Card(
-                    dbc.CardBody([
-                        html.Div(title, style={"fontSize": "12px", "color": COLORS["muted"], "fontWeight": "600"}),
-                        html.Div(value, style={"fontSize": "30px", "fontWeight": "700", "marginTop": "8px"}),
-                    ]),
-                    style={**CARD_STYLE, "height": "100%"},
-                ),
-                md=3,
+def beautify_fig(fig, height=340, legend=True):
+    fig.update_layout(
+        template="plotly_white",
+        height=height,
+        margin=dict(l=20, r=20, t=48, b=30),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(color=COLORS["text"]),
+    )
+    if legend:
+        fig.update_layout(
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.03,
+                xanchor="left",
+                x=0,
+                title=None,
             )
         )
-    return dbc.Row(cols, className="g-3")
+    return fig
 
+def wrap_chart(title, subtitle, graph_id):
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.Div(
+                    title,
+                    style={
+                        "fontSize": "18px",
+                        "fontWeight": "700",
+                        "color": COLORS["text"],
+                        "marginBottom": "8px",
+                    },
+                ),
+                html.Div(
+                    subtitle,
+                    style={
+                        "fontSize": "13px",
+                        "color": COLORS["muted"],
+                        "marginBottom": "18px",
+                        "lineHeight": "1.5",
+                    },
+                ),
+                html.Div(
+                    dcc.Graph(id=graph_id, config=GRAPH_CONFIG),
+                    style={"marginTop": "6px"},
+                ),
+            ]
+        ),
+        style=CARD_STYLE,
+    )
 
-def fig_treatment_age_gender(dff):
-    if dff.empty:
-        return empty_fig()
-    age_order = _order_age_bin(dff["age_bin"])
-    agg = dff.groupby(["age_bin", "gender"], dropna=False).agg(n=("treatment", "size"), yes=("treatment", lambda x: (x.astype(str) == "Yes").sum())).reset_index()
-    agg["rate"] = np.where(agg["n"] > 0, agg["yes"] / agg["n"] * 100, 0)
+def kpi_card(title, value, accent):
+    return dbc.Card(
+        dbc.CardBody(
+            [
+                html.Div(
+                    title,
+                    style={
+                        "fontSize": "12px",
+                        "fontWeight": "600",
+                        "color": COLORS["muted"],
+                        "marginBottom": "8px",
+                    },
+                ),
+                html.Div(
+                    value,
+                    style={
+                        "fontSize": "30px",
+                        "fontWeight": "700",
+                        "color": COLORS["text"],
+                        "lineHeight": "1.1",
+                    },
+                ),
+                html.Div(
+                    style={
+                        "width": "44px",
+                        "height": "4px",
+                        "backgroundColor": accent,
+                        "borderRadius": "999px",
+                        "marginTop": "12px",
+                    }
+                ),
+            ]
+        ),
+        style=CARD_STYLE,
+    )
+
+def build_kpis(dff):
+    n = len(dff)
+
+    def pct(col, val="Yes"):
+        if n == 0 or col not in dff.columns:
+            return None
+        return dff[col].astype(str).eq(val).mean() * 100
+
+    def fmt_pct(x):
+        return "N/A" if x is None else f"{x:.1f}%"
+
+    return dbc.Row(
+        [
+            dbc.Col(kpi_card("Sample Size", f"{n}", COLORS["primary"]), md=3),
+            dbc.Col(kpi_card("Treatment Rate", fmt_pct(pct("treatment")), COLORS["blue"]), md=3),
+            dbc.Col(kpi_card("Benefits Available", fmt_pct(pct("benefits")), COLORS["success"]), md=3),
+            dbc.Col(kpi_card("Family History", fmt_pct(pct("family_history")), COLORS["warning"]), md=3),
+        ],
+        className="g-3",
+    )
+
+# -----------------------------
+# Figure builders
+# -----------------------------
+def fig_treatment_by_age(dff):
+    needed = {"age_bin", "gender", "treatment"}
+    if len(dff) == 0:
+        return make_empty_figure()
+    if not needed.issubset(dff.columns):
+        return make_empty_figure("Missing columns for age-linked chart.")
+
+    tmp = dff.copy()
+    tmp["age_bin"] = ensure_str(tmp["age_bin"])
+    tmp["gender"] = ensure_str(tmp["gender"])
+    tmp["treatment"] = ensure_str(tmp["treatment"])
+
+    agg = (
+        tmp.groupby(["age_bin", "gender"], dropna=False)
+        .agg(n=("treatment", "size"),
+             treat_yes=("treatment", lambda x: (x == "Yes").sum()))
+        .reset_index()
+    )
+    agg["rate"] = agg["treat_yes"] / agg["n"] * 100
+
     fig = px.bar(
         agg,
         x="age_bin",
         y="rate",
         color="gender",
         barmode="group",
-        category_orders={"age_bin": age_order},
+        category_orders={"age_bin": order_age_bin(agg["age_bin"].tolist())},
+        color_discrete_map=GENDER_COLORS,
         custom_data=["age_bin"],
-        labels={"rate": "Treatment rate (%)", "age_bin": "Age group"},
+        labels={"age_bin": "Age group", "rate": "Treatment rate (%)"},
     )
-    fig.update_traces(hovertemplate="Age: %{x}<br>Rate: %{y:.1f}%<extra></extra>")
-    return style_fig(fig)
+    fig.update_traces(
+        hovertemplate="Age group=%{x}<br>Gender=%{legendgroup}<br>Rate=%{y:.1f}%<extra></extra>"
+    )
+    return beautify_fig(fig)
 
+def fig_support_donut(dff):
+    if len(dff) == 0 or "benefits" not in dff.columns:
+        return make_empty_figure()
 
-def fig_interference(dff):
-    if dff.empty:
-        return empty_fig()
-    order = _order_interfere(dff["work_interfere"])
-    sub = dff[dff["treatment"].astype(str) == "Yes"]
-    agg = sub.groupby("work_interfere", dropna=False).size().reset_index(name="count")
-    total = agg["count"].sum()
-    agg["pct"] = np.where(total > 0, agg["count"] / total * 100, 0)
+    tmp = dff.copy()
+    tmp["benefits"] = ensure_str(tmp["benefits"])
+    agg = tmp["benefits"].value_counts(dropna=False).reset_index()
+    agg.columns = ["benefits", "count"]
+
+    fig = px.pie(
+        agg,
+        names="benefits",
+        values="count",
+        hole=0.58,
+        color="benefits",
+        category_orders={"benefits": order_yes_no_unknown(agg["benefits"].tolist())},
+    )
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    return beautify_fig(fig)
+
+def fig_interference_bar(dff):
+    needed = {"work_interfere", "treatment"}
+    if len(dff) == 0 or not needed.issubset(dff.columns):
+        return make_empty_figure()
+
+    tmp = dff.copy()
+    tmp["work_interfere"] = ensure_str(tmp["work_interfere"])
+    tmp["treatment"] = ensure_str(tmp["treatment"])
+    tmp = tmp[tmp["treatment"] == "Yes"]
+
+    if len(tmp) == 0:
+        return make_empty_figure("No treated respondents for current linked filters.")
+
+    agg = tmp["work_interfere"].value_counts(dropna=False).reset_index()
+    agg.columns = ["work_interfere", "count"]
+    agg["pct"] = agg["count"] / agg["count"].sum() * 100
+
     fig = px.bar(
         agg,
         x="work_interfere",
         y="pct",
-        category_orders={"work_interfere": order},
-        labels={"pct": "Percent", "work_interfere": "Work interference"},
+        category_orders={"work_interfere": order_work_interfere(agg["work_interfere"].tolist())},
+        labels={"work_interfere": "Work interference", "pct": "Percent"},
     )
-    return style_fig(fig)
+    fig.update_traces(hovertemplate="%{x}<br>%{y:.1f}%<extra></extra>")
+    return beautify_fig(fig, legend=False)
 
+def fig_overview_heatmap(dff):
+    needed = {"gender", "treatment"}
+    if len(dff) == 0 or not needed.issubset(dff.columns):
+        return make_empty_figure()
 
-def fig_support_donut(dff):
-    if dff.empty:
-        return empty_fig()
-    agg = dff.groupby("benefits", dropna=False).size().reset_index(name="count")
-    fig = px.pie(agg, names="benefits", values="count", hole=0.58)
-    fig.update_traces(textposition="inside", textinfo="percent+label")
-    return style_fig(fig)
+    if "benefits" not in dff.columns or "seek_help" not in dff.columns:
+        return make_empty_figure("Missing support columns.")
 
+    tmp = dff.copy()
+    tmp["gender"] = ensure_str(tmp["gender"])
+    tmp["treatment"] = ensure_str(tmp["treatment"])
+    tmp["benefits"] = ensure_str(tmp["benefits"])
+    tmp["seek_help"] = ensure_str(tmp["seek_help"])
 
-def fig_region_support_heatmap(dff):
-    if dff.empty:
-        return empty_fig()
-    metrics = ["treatment", "benefits", "seek_help"]
     rows = []
-    for region, sub in dff.groupby("region", dropna=False):
-        for m in metrics:
-            rows.append({"region": region, "metric": m, "rate": pct_yes(sub[m])})
-    heat = pd.DataFrame(rows)
-    metric_name = {"treatment": "Treatment", "benefits": "Benefits", "seek_help": "Seek help"}
-    heat["metric"] = heat["metric"].map(metric_name)
-    fig = px.imshow(
-        heat.pivot(index="region", columns="metric", values="rate"),
-        text_auto=".1f",
-        aspect="auto",
-        color_continuous_scale="Teal",
-        labels=dict(color="Rate (%)"),
+    for metric in ["benefits", "seek_help"]:
+        sub = (
+            tmp.groupby(["gender", metric], dropna=False)
+            .size()
+            .reset_index(name="count")
+        )
+        yes_mask = sub[metric].astype(str) == "Yes"
+        sub = sub[yes_mask].copy()
+        sub["metric"] = metric
+        rows.append(sub[["gender", "metric", "count"]])
+
+    heat = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+    if len(heat) == 0:
+        return make_empty_figure()
+
+    totals = heat.groupby("metric")["count"].transform("sum")
+    heat["rate"] = heat["count"] / totals * 100
+    heat["metric"] = heat["metric"].replace(
+        {"benefits": "Benefits available", "seek_help": "Encourages help-seeking"}
     )
-    return style_fig(fig, height=390)
 
+    fig = px.density_heatmap(
+        heat,
+        x="metric",
+        y="gender",
+        z="rate",
+        text_auto=".1f",
+        color_continuous_scale="Tealgrn",
+        labels={"metric": "", "gender": "Gender", "rate": "Percent"},
+    )
+    return beautify_fig(fig, legend=False)
 
-def fig_year_trend(dff):
-    if dff.empty or "year" not in dff.columns or dff["year"].dropna().nunique() == 0:
-        return empty_fig("Year trend unavailable")
-    agg = dff.groupby("year", dropna=False).agg(n=("treatment", "size"), rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100)).reset_index()
-    fig = px.line(agg, x="year", y="rate", markers=True, labels={"rate": "Treatment rate (%)"})
-    return style_fig(fig)
+def fig_demographic_treemap(dff):
+    if len(dff) == 0 or "gender" not in dff.columns or "age_bin" not in dff.columns:
+        return make_empty_figure()
 
+    tmp = dff.copy()
+    tmp["gender"] = ensure_str(tmp["gender"])
+    tmp["age_bin"] = ensure_str(tmp["age_bin"])
 
-def fig_gender_treemap(dff):
-    if dff.empty:
-        return empty_fig()
-    agg = dff.groupby(["gender", "age_bin"], dropna=False).size().reset_index(name="count")
-    fig = px.treemap(agg, path=[px.Constant("All respondents"), "gender", "age_bin"], values="count")
-    return style_fig(fig, height=400)
+    agg = tmp.groupby(["gender", "age_bin"], dropna=False).size().reset_index(name="count")
 
+    fig = px.treemap(
+        agg,
+        path=[px.Constant("All respondents"), "gender", "age_bin"],
+        values="count",
+        color="gender",
+        color_discrete_map=GENDER_COLORS,
+    )
+    return beautify_fig(fig, legend=False)
 
 def fig_age_box(dff):
-    if dff.empty or dff["age_numeric"].dropna().empty:
-        return empty_fig("Numeric age unavailable")
-    fig = px.box(dff, x="gender", y="age_numeric", color="gender", labels={"age_numeric": "Age"})
-    return style_fig(fig)
+    if len(dff) == 0 or "gender" not in dff.columns or "age" not in dff.columns:
+        return make_empty_figure()
 
+    tmp = dff.copy()
+    tmp = tmp[pd.to_numeric(tmp["age"], errors="coerce").notna()].copy()
+    tmp["age"] = pd.to_numeric(tmp["age"], errors="coerce")
+    tmp["gender"] = ensure_str(tmp["gender"])
 
-def fig_support_scatter(dff):
-    if dff.empty:
-        return empty_fig()
-    agg = dff.groupby(["region", "country"], dropna=False).agg(
-        n=("treatment", "size"),
-        treatment_rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100),
-        benefits_rate=("benefits", lambda x: (x.astype(str) == "Yes").mean() * 100),
-        seek_help_rate=("seek_help", lambda x: (x.astype(str) == "Yes").mean() * 100),
-    ).reset_index()
-    fig = px.scatter(
-        agg,
-        x="benefits_rate",
-        y="treatment_rate",
-        size="n",
-        color="region",
-        hover_name="country",
-        labels={"benefits_rate": "Benefits rate (%)", "treatment_rate": "Treatment rate (%)"},
+    if len(tmp) == 0:
+        return make_empty_figure("No numeric age values available.")
+
+    fig = px.box(
+        tmp,
+        x="gender",
+        y="age",
+        color="gender",
+        color_discrete_map=GENDER_COLORS,
+        points="outliers",
+        labels={"gender": "Gender", "age": "Age"},
     )
-    return style_fig(fig)
+    return beautify_fig(fig)
 
+def fig_support_bubble(dff):
+    needed = {"region", "benefits", "seek_help", "treatment"}
+    if len(dff) == 0 or not needed.issubset(dff.columns):
+        return make_empty_figure()
 
-def fig_stacked_support(dff):
-    if dff.empty:
-        return empty_fig()
-    order = _order_yes_no_unknown(pd.concat([dff["benefits"], dff["seek_help"]]))
-    long = pd.concat([
-        dff[["benefits"]].rename(columns={"benefits": "response"}).assign(metric="Benefits"),
-        dff[["seek_help"]].rename(columns={"seek_help": "response"}).assign(metric="Seek help"),
-    ], ignore_index=True)
-    agg = long.groupby(["metric", "response"], dropna=False).size().reset_index(name="count")
-    fig = px.bar(agg, x="metric", y="count", color="response", barmode="stack", category_orders={"response": order})
-    return style_fig(fig)
+    tmp = dff.copy()
+    for c in ["region", "benefits", "seek_help", "treatment"]:
+        tmp[c] = ensure_str(tmp[c])
 
+    grp = tmp.groupby("region", dropna=False).agg(
+        n=("treatment", "size"),
+        benefits_yes=("benefits", lambda x: (x == "Yes").mean() * 100),
+        seek_yes=("seek_help", lambda x: (x == "Yes").mean() * 100),
+        treatment_yes=("treatment", lambda x: (x == "Yes").mean() * 100),
+    ).reset_index()
 
-def fig_geo_map(dff):
-    if dff.empty:
-        return empty_fig()
-    agg = dff.groupby("country", dropna=False).agg(n=("treatment", "size"), treatment_rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100)).reset_index()
-    geo = agg.merge(country_geo, on="country", how="left")
-    geo["iso_alpha"] = geo["iso_alpha"].fillna("UNK")
+    fig = px.scatter(
+        grp,
+        x="benefits_yes",
+        y="seek_yes",
+        size="n",
+        color="treatment_yes",
+        hover_name="region",
+        custom_data=["region"],
+        labels={
+            "benefits_yes": "Benefits available (%)",
+            "seek_yes": "Help-seeking support (%)",
+            "treatment_yes": "Treatment rate (%)",
+        },
+        color_continuous_scale="Blues",
+    )
+    return beautify_fig(fig, legend=False)
+
+def fig_support_stacked(dff):
+    needed = {"benefits", "treatment"}
+    if len(dff) == 0 or not needed.issubset(dff.columns):
+        return make_empty_figure()
+
+    tmp = dff.copy()
+    tmp["benefits"] = ensure_str(tmp["benefits"])
+    tmp["treatment"] = ensure_str(tmp["treatment"])
+
+    agg = tmp.groupby(["benefits", "treatment"], dropna=False).size().reset_index(name="count")
+    fig = px.bar(
+        agg,
+        x="benefits",
+        y="count",
+        color="treatment",
+        barmode="stack",
+        category_orders={
+            "benefits": order_yes_no_unknown(agg["benefits"].tolist()),
+            "treatment": order_yes_no_unknown(agg["treatment"].tolist()),
+        },
+    )
+    return beautify_fig(fig)
+
+def fig_region_support_heatmap(dff):
+    needed = {"region", "benefits", "seek_help", "anonymity"}
+    if len(dff) == 0 or not needed.issubset(dff.columns):
+        return make_empty_figure()
+
+    tmp = dff.copy()
+    for c in ["region", "benefits", "seek_help", "anonymity"]:
+        tmp[c] = ensure_str(tmp[c])
+
+    metrics = []
+    for col, label in [
+        ("benefits", "Benefits"),
+        ("seek_help", "Seek help"),
+        ("anonymity", "Anonymity"),
+    ]:
+        g = tmp.groupby("region", dropna=False)[col].apply(lambda x: (x == "Yes").mean() * 100).reset_index(name="rate")
+        g["metric"] = label
+        metrics.append(g)
+
+    heat = pd.concat(metrics, ignore_index=True)
+    fig = px.density_heatmap(
+        heat,
+        x="metric",
+        y="region",
+        z="rate",
+        text_auto=".1f",
+        color_continuous_scale="Tealgrn",
+        labels={"metric": "", "region": "Region", "rate": "Percent"},
+    )
+    return beautify_fig(fig, legend=False)
+
+def fig_country_map(dff):
+    if len(dff) == 0 or "country" not in dff.columns:
+        return make_empty_figure("No country column found.")
+
+    tmp = dff.copy()
+    tmp["country"] = ensure_str(tmp["country"])
+
+    if "treatment" in tmp.columns:
+        grp = tmp.groupby("country", dropna=False).agg(
+            n=("country", "size"),
+            treatment_rate=("treatment", lambda x: (x.astype(str) == "Yes").mean() * 100),
+        ).reset_index()
+    else:
+        grp = tmp.groupby("country", dropna=False).size().reset_index(name="n")
+        grp["treatment_rate"] = grp["n"]
+
     fig = px.choropleth(
-        geo[geo["iso_alpha"] != "UNK"],
-        locations="iso_alpha",
+        grp,
+        locations="country",
+        locationmode="country names",
         color="treatment_rate",
         hover_name="country",
         custom_data=["country"],
         color_continuous_scale="Blues",
         labels={"treatment_rate": "Treatment rate (%)"},
     )
-    fig.update_geos(showframe=False, showcoastlines=True, coastlinecolor="#D4DCE8")
-    return style_fig(fig, height=420)
-
+    return beautify_fig(fig, legend=False)
 
 def fig_remote_donut(dff):
-    if dff.empty:
-        return empty_fig()
-    agg = dff.groupby("remote_work", dropna=False).size().reset_index(name="count")
-    fig = px.pie(agg, names="remote_work", values="count", hole=0.55)
-    fig.update_traces(textinfo="percent+label")
-    return style_fig(fig)
+    if len(dff) == 0 or "remote_work" not in dff.columns:
+        return make_empty_figure()
 
+    tmp = dff.copy()
+    tmp["remote_work"] = ensure_str(tmp["remote_work"])
+    agg = tmp["remote_work"].value_counts(dropna=False).reset_index()
+    agg.columns = ["remote_work", "count"]
 
-def current_selection_badges(age, country, region):
-    vals = []
-    if age:
-        vals.append(("Age", age))
-    if country:
-        vals.append(("Country", country))
-    if region:
-        vals.append(("Region", region))
-    if not vals:
-        return dbc.Alert("No linked selection active. Click charts to filter related views.", color="light", style={"borderRadius": "12px", "marginBottom": "12px"})
-
-    return html.Div(
-        [
-            dbc.Badge(f"{k}: {v}", color="primary", pill=True, className="me-2", style={"fontSize": "0.9rem", "padding": "8px 12px"})
-            for k, v in vals
-        ],
-        style={"marginBottom": "12px"},
+    fig = px.pie(
+        agg,
+        names="remote_work",
+        values="count",
+        hole=0.58,
     )
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    return beautify_fig(fig)
 
+def fig_country_treatment_bar(dff):
+    if len(dff) == 0 or "country" not in dff.columns or "treatment" not in dff.columns:
+        return make_empty_figure()
 
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], title="Mental Health Dashboard")
+    tmp = dff.copy()
+    tmp["country"] = ensure_str(tmp["country"])
+    tmp["treatment"] = ensure_str(tmp["treatment"])
+
+    grp = tmp.groupby("country", dropna=False).agg(
+        n=("country", "size"),
+        treatment_rate=("treatment", lambda x: (x == "Yes").mean() * 100),
+    ).reset_index()
+
+    grp = grp.sort_values("n", ascending=False).head(12)
+    fig = px.bar(
+        grp,
+        x="country",
+        y="treatment_rate",
+        labels={"country": "Country", "treatment_rate": "Treatment rate (%)"},
+    )
+    return beautify_fig(fig, legend=False)
+
+# -----------------------------
+# Data prep for dropdowns
+# -----------------------------
+years = sorted(df["year"].dropna().unique()) if "year" in df.columns else []
+regions = sorted(df["region"].dropna().unique()) if "region" in df.columns else []
+genders = sorted(df["gender"].dropna().unique()) if "gender" in df.columns else []
+age_bins = order_age_bin(df["age_bin"].dropna().unique()) if "age_bin" in df.columns else []
+company_sizes = order_company_size(df["company_size"].dropna().unique()) if "company_size" in df.columns else []
+remote_vals = sorted(df["remote_work"].dropna().unique()) if "remote_work" in df.columns else []
+
+# -----------------------------
+# App init
+# -----------------------------
+app = Dash(
+    __name__,
+    external_stylesheets=[dbc.themes.BOOTSTRAP],
+    title="Workplace Mental Health Dashboard",
+)
 server = app.server
 
-years = sorted(df["year"].dropna().unique().tolist()) if "year" in df.columns else []
-regions = sorted(_safe_unique(df["region"]))
-genders = sorted(_safe_unique(df["gender"]))
-age_bins = _order_age_bin(df["age_bin"])
-company_sizes = _order_company_size(df["company_size"])
-remote_vals = sorted(_safe_unique(df["remote_work"]))
+# -----------------------------
+# Sidebar
+# -----------------------------
+filters = dbc.Card(
+    dbc.CardBody(
+        [
+            html.Div("Filters", style={"fontSize": "16px", "fontWeight": "700", "marginBottom": "16px"}),
 
-hero = dbc.Card(
-    dbc.CardBody([
-        html.Div("Executive dashboard", style={"fontSize": "13px", "fontWeight": "700", "color": COLORS["primary"], "textTransform": "uppercase", "letterSpacing": "0.08em"}),
-        html.H2("Workplace Mental Health Intelligence Hub", style={"marginTop": "8px", "marginBottom": "8px"}),
-        html.P("Commercial-style analytics dashboard with multi-tab navigation, cross-chart interaction, geographic drilldown, and business-facing support metrics.", style={"color": COLORS["muted"], "marginBottom": 0}),
-    ]),
-    style={**CARD_STYLE, "marginBottom": "14px", "background": "linear-gradient(135deg, #FFFFFF 0%, #F5F8FF 100%)"},
-)
-
-sidebar = dbc.Card(
-    dbc.CardBody([
-        html.Div("Global filters", style={"fontWeight": "700", "fontSize": "15px", "marginBottom": "14px"}),
-        html.Label("Year", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-year", options=[{"label": str(int(y)), "value": int(y)} for y in years], value=int(years[0]) if years else None, clearable=False),
-        html.Div(style={"height": "12px"}),
-        html.Label("Region", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-region", options=[{"label": x, "value": x} for x in regions], value=regions, multi=True),
-        html.Div(style={"height": "12px"}),
-        html.Label("Gender", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-gender", options=[{"label": x, "value": x} for x in genders], value=genders, multi=True),
-        html.Div(style={"height": "12px"}),
-        html.Label("Age group", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-agebin", options=[{"label": x, "value": x} for x in age_bins], value=age_bins, multi=True),
-        html.Div(style={"height": "12px"}),
-        html.Label("Company size", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-company", options=[{"label": x, "value": x} for x in company_sizes], value=company_sizes, multi=True),
-        html.Div(style={"height": "12px"}),
-        html.Label("Remote work", style={"fontWeight": "600", "fontSize": "13px"}),
-        dcc.Dropdown(id="f-remote", options=[{"label": x, "value": x} for x in remote_vals], value=remote_vals, multi=True),
-        html.Hr(),
-        dbc.Button("Reset linked selection", id="reset-linked", color="primary", className="w-100"),
-        html.Div(style={"height": "10px"}),
-        html.Div(id="selection-state"),
-        dcc.Store(id="store-age"),
-        dcc.Store(id="store-country"),
-        dcc.Store(id="store-region"),
-    ]),
-    style={**CARD_STYLE, "height": "100%"},
-)
-
-
-def graph_card(title, graph_id, height=340):
-    return dbc.Card(
-        dbc.CardBody([
-            html.Div(title, style={"fontWeight": "700", "fontSize": "16px", "marginBottom": "14px", "lineHeight": "1.35", "color": COLORS["text"]}),
-            html.Div(
-                dcc.Graph(id=graph_id, config={"displayModeBar": False}, style={"height": f"{height}px"}),
-                style={"marginTop": "6px"},
+            html.Label("Year"),
+            dcc.Dropdown(
+                options=[{"label": str(y), "value": y} for y in years],
+                value=years[0] if years else None,
+                id="f-year",
+                clearable=False,
             ),
-        ], style={"padding": "20px 20px 18px 20px"}),
-        style={**CARD_STYLE, "height": "100%"},
-    )
 
+            html.Div(style={"height": "14px"}),
 
-overview_tab = html.Div([
-    html.Div(id="kpi-row", style={"marginBottom": "14px"}),
-    dbc.Row([
-        dbc.Col(graph_card("Linked selection source", "g-age-gender", 360), md=6),
-        dbc.Col(graph_card("Support composition", "g-support-donut", 360), md=6),
-    ], className="g-3 mb-3"),
-    dbc.Row([
-        dbc.Col(graph_card("Interference", "g-interference", 360), md=6),
-        dbc.Col(graph_card("Regional heatmap", "g-heatmap", 390), md=6),
-    ], className="g-3"),
-])
+            html.Label("Region"),
+            dcc.Dropdown(
+                options=[{"label": r, "value": r} for r in regions],
+                value=["North America"] if "North America" in regions else (regions[:1] if regions else []),
+                id="f-region",
+                multi=True,
+            ),
 
-demographics_tab = html.Div([
-    dbc.Row([
-        dbc.Col(graph_card("Demographic treemap", "g-treemap", 420), md=6),
-        dbc.Col(graph_card("Age distribution", "g-age-box", 420), md=6),
-    ], className="g-3 mb-3"),
-    dbc.Row([
-        dbc.Col(graph_card("Trend over time", "g-year-trend", 360), md=12),
-    ], className="g-3"),
-])
+            html.Div(style={"height": "14px"}),
 
-support_tab = html.Div([
-    dbc.Row([
-        dbc.Col(graph_card("Treatment vs benefits", "g-support-scatter", 380), md=7),
-        dbc.Col(graph_card("Support stack", "g-support-stack", 380), md=5),
-    ], className="g-3"),
-])
+            html.Label("Gender"),
+            dcc.Dropdown(
+                options=[{"label": g, "value": g} for g in genders],
+                value=genders,
+                id="f-gender",
+                multi=True,
+            ),
 
-geo_tab = html.Div([
-    dbc.Row([
-        dbc.Col(graph_card("Country map", "g-geo-map", 430), md=8),
-        dbc.Col(graph_card("Remote work", "g-remote-donut", 430), md=4),
-    ], className="g-3"),
-])
+            html.Div(style={"height": "14px"}),
 
-main_tabs = dbc.Card(
-    dbc.CardBody([
-        dbc.Tabs([
-            dbc.Tab(overview_tab, label="Overview"),
-            dbc.Tab(demographics_tab, label="Demographics"),
-            dbc.Tab(support_tab, label="Support Systems"),
-            dbc.Tab(geo_tab, label="Geography & Work Style"),
-        ])
-    ]),
-    style={**CARD_STYLE, "height": "100%"},
+            html.Label("Age bin"),
+            dcc.Dropdown(
+                options=[{"label": a, "value": a} for a in age_bins],
+                value=age_bins,
+                id="f-agebin",
+                multi=True,
+            ),
+
+            html.Div(style={"height": "14px"}),
+
+            html.Label("Company size"),
+            dcc.Dropdown(
+                options=[{"label": c, "value": c} for c in company_sizes],
+                value=company_sizes,
+                id="f-company",
+                multi=True,
+            ),
+
+            html.Div(style={"height": "14px"}),
+
+            html.Label("Remote work"),
+            dcc.Dropdown(
+                options=[{"label": r, "value": r} for r in remote_vals],
+                value=remote_vals,
+                id="f-remote",
+                multi=True,
+            ),
+
+            html.Hr(),
+
+            html.Div("Linked selections", style={"fontWeight": "700", "marginBottom": "8px"}),
+            html.Div(id="selected-tags", style={"marginBottom": "12px"}),
+
+            dbc.Button(
+                "Reset linked selection",
+                id="btn-reset-linked",
+                color="secondary",
+                outline=True,
+                size="sm",
+            ),
+        ]
+    ),
+    style=CARD_STYLE,
+)
+
+# -----------------------------
+# Tabs
+# -----------------------------
+overview_tab = html.Div(
+    [
+        html.Div(id="kpi-area", style={"marginBottom": "16px"}),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Linked selection source",
+                        "Click an age group to update the other overview panels.",
+                        "overview-age-bar",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    wrap_chart(
+                        "Support composition",
+                        "Distribution of employer mental-health benefits under the current linked filters.",
+                        "overview-support-donut",
+                    ),
+                    md=6,
+                ),
+            ],
+            className="g-3",
+        ),
+
+        html.Div(style={"height": "16px"}),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Work interference among treated respondents",
+                        "How often mental health affects work for treated respondents.",
+                        "overview-interference-bar",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    wrap_chart(
+                        "Support profile heatmap",
+                        "Comparison of support signals across demographic groups.",
+                        "overview-support-heatmap",
+                    ),
+                    md=6,
+                ),
+            ],
+            className="g-3",
+        ),
+    ]
+)
+
+demographics_tab = html.Div(
+    [
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Demographic treemap",
+                        "Composition of respondents by gender and age group.",
+                        "demo-treemap",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    wrap_chart(
+                        "Age distribution",
+                        "Distribution of reported ages across gender groups.",
+                        "demo-age-box",
+                    ),
+                    md=6,
+                ),
+            ],
+            className="g-3",
+        ),
+    ]
+)
+
+support_tab = html.Div(
+    [
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Regional support landscape",
+                        "Bubble size reflects sample size; color reflects treatment rate.",
+                        "support-bubble",
+                    ),
+                    md=6,
+                ),
+                dbc.Col(
+                    wrap_chart(
+                        "Benefits vs treatment",
+                        "Treatment composition across employer mental-health benefits.",
+                        "support-stacked",
+                    ),
+                    md=6,
+                ),
+            ],
+            className="g-3",
+        ),
+
+        html.Div(style={"height": "16px"}),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Regional support heatmap",
+                        "Click a region to filter charts across tabs.",
+                        "support-heatmap",
+                    ),
+                    md=12,
+                ),
+            ],
+            className="g-3",
+        ),
+    ]
+)
+
+geo_tab = html.Div(
+    [
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Global treatment map",
+                        "Click a country to apply a linked selection.",
+                        "geo-map",
+                    ),
+                    md=7,
+                ),
+                dbc.Col(
+                    wrap_chart(
+                        "Remote work composition",
+                        "Breakdown of remote-work status under the current linked filters.",
+                        "geo-remote-donut",
+                    ),
+                    md=5,
+                ),
+            ],
+            className="g-3",
+        ),
+
+        html.Div(style={"height": "16px"}),
+
+        dbc.Row(
+            [
+                dbc.Col(
+                    wrap_chart(
+                        "Country treatment comparison",
+                        "Top countries by response count and treatment rate.",
+                        "geo-country-bar",
+                    ),
+                    md=12,
+                ),
+            ],
+            className="g-3",
+        ),
+    ]
 )
 
 app.layout = dbc.Container(
     fluid=True,
-    style={"backgroundColor": COLORS["bg"], "minHeight": "100vh", "padding": "18px"},
+    style={
+        "minHeight": "100vh",
+        "backgroundColor": COLORS["bg"],
+        "padding": "18px",
+    },
     children=[
-        hero,
-        dbc.Row([
-            dbc.Col(sidebar, md=3),
-            dbc.Col(main_tabs, md=9),
-        ], className="g-3"),
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.H2(
+                            "Workplace Mental Health Dashboard",
+                            style={
+                                "fontWeight": "700",
+                                "color": COLORS["text"],
+                                "marginBottom": "2px",
+                            },
+                        ),
+                        html.Div(
+                            "Interactive exploration of treatment patterns, demographic structure, workplace support, and geography.",
+                            style={"color": COLORS["muted"]},
+                        ),
+                    ]
+                )
+            ],
+            style={"marginBottom": "16px"},
+        ),
+
+        dcc.Store(id="store-selected-age"),
+        dcc.Store(id="store-selected-country"),
+        dcc.Store(id="store-selected-region"),
+
+        dbc.Row(
+            [
+                dbc.Col(filters, width=3),
+                dbc.Col(
+                    dbc.Card(
+                        dbc.CardBody(
+                            dcc.Tabs(
+                                id="main-tabs",
+                                value="tab-overview",
+                                children=[
+                                    dcc.Tab(label="Overview", value="tab-overview", children=overview_tab),
+                                    dcc.Tab(label="Demographics", value="tab-demographics", children=demographics_tab),
+                                    dcc.Tab(label="Support Systems", value="tab-support", children=support_tab),
+                                    dcc.Tab(label="Geography & Work Style", value="tab-geo", children=geo_tab),
+                                ],
+                            )
+                        ),
+                        style=CARD_STYLE,
+                    ),
+                    width=9,
+                ),
+            ],
+            className="g-3",
+        ),
     ],
 )
 
-
+# -----------------------------
+# Linked selection callback
+# -----------------------------
 @app.callback(
-    Output("store-age", "data"),
-    Output("store-country", "data"),
-    Output("store-region", "data"),
-    Input("g-age-gender", "clickData"),
-    Input("g-geo-map", "clickData"),
-    Input("g-heatmap", "clickData"),
-    Input("reset-linked", "n_clicks"),
-    State("store-age", "data"),
-    State("store-country", "data"),
-    State("store-region", "data"),
+    Output("store-selected-age", "data"),
+    Output("store-selected-country", "data"),
+    Output("store-selected-region", "data"),
+    Input("overview-age-bar", "clickData"),
+    Input("geo-map", "clickData"),
+    Input("support-heatmap", "clickData"),
+    Input("btn-reset-linked", "n_clicks"),
+    State("store-selected-age", "data"),
+    State("store-selected-country", "data"),
+    State("store-selected-region", "data"),
     prevent_initial_call=True,
 )
-def update_linked_filters(age_click, geo_click, heat_click, reset_clicks, current_age, current_country, current_region):
-    trig = callback_context.triggered_id
-    if trig == "reset-linked":
+def update_linked_selection(age_click, geo_click, region_click, reset_clicks,
+                            current_age, current_country, current_region):
+    triggered = callback_context.triggered[0]["prop_id"].split(".")[0]
+
+    if triggered == "btn-reset-linked":
         return None, None, None
 
-    if trig == "g-age-gender" and age_click:
-        pt = age_click["points"][0]
-        age_val = (pt.get("customdata") or [pt.get("x")])[0]
-        return (None if current_age == age_val else age_val), current_country, current_region
+    if triggered == "overview-age-bar" and age_click:
+        try:
+            age_val = age_click["points"][0]["customdata"][0]
+            return (None if current_age == age_val else age_val), current_country, current_region
+        except Exception:
+            return current_age, current_country, current_region
 
-    if trig == "g-geo-map" and geo_click:
-        pt = geo_click["points"][0]
-        country_val = (pt.get("customdata") or [pt.get("hovertext")])[0]
-        return current_age, (None if current_country == country_val else country_val), current_region
+    if triggered == "geo-map" and geo_click:
+        try:
+            country_val = geo_click["points"][0]["customdata"][0]
+            return current_age, (None if current_country == country_val else country_val), current_region
+        except Exception:
+            return current_age, current_country, current_region
 
-    if trig == "g-heatmap" and heat_click:
-        pt = heat_click["points"][0]
-        region_val = pt.get("y")
-        return current_age, current_country, (None if current_region == region_val else region_val)
+    if triggered == "support-heatmap" and region_click:
+        try:
+            point = region_click["points"][0]
+            region_val = point.get("y")
+            return current_age, current_country, (None if current_region == region_val else region_val)
+        except Exception:
+            return current_age, current_country, current_region
 
     return current_age, current_country, current_region
 
-
+# -----------------------------
+# Main update callback
+# -----------------------------
 @app.callback(
-    Output("selection-state", "children"),
-    Output("kpi-row", "children"),
-    Output("g-age-gender", "figure"),
-    Output("g-support-donut", "figure"),
-    Output("g-interference", "figure"),
-    Output("g-heatmap", "figure"),
-    Output("g-treemap", "figure"),
-    Output("g-age-box", "figure"),
-    Output("g-year-trend", "figure"),
-    Output("g-support-scatter", "figure"),
-    Output("g-support-stack", "figure"),
-    Output("g-geo-map", "figure"),
-    Output("g-remote-donut", "figure"),
+    Output("kpi-area", "children"),
+    Output("selected-tags", "children"),
+
+    Output("overview-age-bar", "figure"),
+    Output("overview-support-donut", "figure"),
+    Output("overview-interference-bar", "figure"),
+    Output("overview-support-heatmap", "figure"),
+
+    Output("demo-treemap", "figure"),
+    Output("demo-age-box", "figure"),
+
+    Output("support-bubble", "figure"),
+    Output("support-stacked", "figure"),
+    Output("support-heatmap", "figure"),
+
+    Output("geo-map", "figure"),
+    Output("geo-remote-donut", "figure"),
+    Output("geo-country-bar", "figure"),
+
     Input("f-year", "value"),
     Input("f-region", "value"),
     Input("f-gender", "value"),
     Input("f-agebin", "value"),
     Input("f-company", "value"),
     Input("f-remote", "value"),
-    Input("store-age", "data"),
-    Input("store-country", "data"),
-    Input("store-region", "data"),
+    Input("store-selected-age", "data"),
+    Input("store-selected-country", "data"),
+    Input("store-selected-region", "data"),
 )
-def update_dashboard(year, regions_v, genders_v, age_bins_v, company_sizes_v, remote_v, linked_age, linked_country, linked_region):
-    try:
-        dff = filtered_df(df, year, regions_v, genders_v, age_bins_v, company_sizes_v, remote_v, linked_age, linked_country, linked_region)
-        return (
-            current_selection_badges(linked_age, linked_country, linked_region),
-            kpi_cards(dff),
-            fig_treatment_age_gender(dff),
-            fig_support_donut(dff),
-            fig_interference(dff),
-            fig_region_support_heatmap(dff),
-            fig_gender_treemap(dff),
-            fig_age_box(dff),
-            fig_year_trend(dff),
-            fig_support_scatter(dff),
-            fig_stacked_support(dff),
-            fig_geo_map(dff),
-            fig_remote_donut(dff),
-        )
-    except Exception as e:
-        traceback.print_exc()
-        err = empty_fig(f"Callback error: {e}")
-        return current_selection_badges(linked_age, linked_country, linked_region), html.Div(), err, err, err, err, err, err, err, err, err, err, err
+def update_dashboard(year, region, gender, agebin, company, remote,
+                     selected_age, selected_country, selected_region):
+    base = filtered_df(df, year, region, gender, agebin, company, remote)
+    linked = apply_linked_filters(base, selected_age, selected_country, selected_region)
 
+    tags = []
+    if selected_age:
+        tags.append(dbc.Badge(f"Age: {selected_age}", color="primary", className="me-1"))
+    if selected_country:
+        tags.append(dbc.Badge(f"Country: {selected_country}", color="info", className="me-1"))
+    if selected_region:
+        tags.append(dbc.Badge(f"Region: {selected_region}", color="success", className="me-1"))
+    if not tags:
+        tags = html.Div("No linked selection active.", style={"color": COLORS["muted"], "fontSize": "13px"})
+
+    return (
+        build_kpis(linked),
+        tags,
+
+        fig_treatment_by_age(base),
+        fig_support_donut(linked),
+        fig_interference_bar(linked),
+        fig_overview_heatmap(linked),
+
+        fig_demographic_treemap(linked),
+        fig_age_box(linked),
+
+        fig_support_bubble(linked),
+        fig_support_stacked(linked),
+        fig_region_support_heatmap(base),
+
+        fig_country_map(base),
+        fig_remote_donut(linked),
+        fig_country_treatment_bar(linked),
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
